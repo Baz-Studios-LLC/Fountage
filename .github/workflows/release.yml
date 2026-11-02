@@ -95,12 +95,13 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
+          $number = [int]$version.Substring(1)
           $staging = Join-Path $env:RUNNER_TEMP 'fountage-package'
           Expand-Archive -Path "dist/Fountage-$version-windows-x64.zip" -DestinationPath $staging
           $source = Join-Path $staging "Fountage-$version-windows-x64"
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { throw 'Inno Setup is missing from the runner' }
-          & $iscc "/DSourceDir=$source" "/DReleaseLabel=$version" packaging/windows/fountage.iss
+          & $iscc "/DSourceDir=$source" "/DReleaseLabel=$version" "/DReleaseNumber=$number" packaging/windows/fountage.iss
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
           $setup = (Resolve-Path "dist/Fountage-$version-windows-x64-setup.exe").Path
           Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait

@@ -4,10 +4,14 @@
 #ifndef ReleaseLabel
   #define ReleaseLabel "v001"
 #endif
+#ifndef ReleaseNumber
+  #define ReleaseNumber 1
+#endif
 [Setup]
 AppId={{D6F453A0-741C-4FD9-9E21-ADCE80210537}
 AppName=Fountage
 AppVersion={#ReleaseLabel}
+VersionInfoVersion=0.0.{#ReleaseNumber}.0
 AppVerName=Fountage {#ReleaseLabel} development preview
 AppPublisher=Baz Studios LLC
 AppPublisherURL=https://github.com/Baz-Studios-LLC/Fountage

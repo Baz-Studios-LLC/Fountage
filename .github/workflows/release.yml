@@ -74,6 +74,17 @@ jobs:
           if ($app.ExitCode -ne 0) { throw "App exit code $($app.ExitCode)" }
       - name: Package preview
         run: python scripts/package-release.py --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --binary ${{ matrix.binary }}
+      - name: Verify Mac archive and project package declaration
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          version=$(cat VERSION)
+          ditto -x -k "dist/Fountage-$version-macos-${{ matrix.arch }}.zip" "$RUNNER_TEMP/fountage-package"
+          app="$RUNNER_TEMP/fountage-package/Fountage-$version-macos-${{ matrix.arch }}/Fountage.app"
+          codesign --verify --deep --strict "$app"
+          test -x "$app/Contents/MacOS/Fountage"
+          /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app"
+          swift -e 'import UniformTypeIdentifiers; guard let type = UTType(filenameExtension: "fountage"), type.identifier == "com.bazstudios.fountage.project", type.conforms(to: .package) else { fatalError("Fountage package type is not registered") }; print(type.identifier)'
       - name: Build and check per-user Windows installer
         if: matrix.platform == 'windows'
         shell: pwsh

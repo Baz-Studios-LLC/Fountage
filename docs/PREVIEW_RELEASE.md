@@ -6,7 +6,7 @@ Fountage by Baz Studios is a writing studio under active development. This prere
 
 - macOS arm64: Apple Silicon Macs, macOS 14 or newer.
 - macOS x64: Intel Macs, macOS 14 or newer.
-- Windows x64: 64-bit Windows 10/11. Extract the entire ZIP and run Fountage.exe.
+- Windows x64: 64-bit Windows 10/11. Run the per-user setup installer, or extract the entire portable ZIP and run Fountage.exe.
 
 Mac downloads contain Fountage.app. The preview is ad-hoc signed, not Developer ID signed or notarized. Windows binaries are not Authenticode signed. Operating-system trust prompts may appear. Release assets include SHA-256 checksums.
 
@@ -15,6 +15,8 @@ Mac downloads contain Fountage.app. The preview is ad-hoc signed, not Developer 
 Eight writing categories, starting layouts, source editing, an experimental formatted screenplay surface, structure navigation, title-page and scene-number tools, Shelf notes/snippets/checklists/Quick Notes, light/dark modes and independent white paper. The public version stays v001 until the owner authorizes a change.
 
 Saving currently creates a new copy. Keep original manuscripts and backups; use copies while testing. Projects contain source, metadata and attachments. On Windows, project packages containing symbolic-link attachments are rejected rather than saved with missing data. Ordinary projects without such links are supported. The Slint preview does not yet provide the native Swift app's full pagination, printing/PDF, goals or document-system features.
+
+Launch the app, then use Open Project to select a .fountage project (a package on macOS, a folder on Windows). Finder/Explorer double-click document opening is not implemented in this preview.
 
 ## Verification limits
 

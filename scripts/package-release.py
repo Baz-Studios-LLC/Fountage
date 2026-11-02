@@ -76,6 +76,21 @@ def main():
             for resource in ("Fountage.icns", "Assets.car"):
                 shutil.copy2(ROOT / "packaging/icons" / resource, contents / "Resources" / resource)
             info = dict(CFBundleIdentifier="com.bazstudios.fountage.slintlab", CFBundleName="Fountage", CFBundleDisplayName="Fountage", CFBundleExecutable="Fountage", CFBundlePackageType="APPL", CFBundleIconFile="Fountage.icns", CFBundleIconName="Fountage", CFBundleShortVersionString=f"0.0.{int(version[1:])}", CFBundleVersion=str(int(version[1:])), FountageReleaseVersion=version, LSMinimumSystemVersion="14.0", NSHighResolutionCapable=True, NSHumanReadableCopyright="Fountage by Baz Studios")
+            # Recognize .fountage directories as packages on a clean Mac, even
+            # without the Swift reference installed. Do not claim Finder Open
+            # handling: this preview currently opens projects through its menu.
+            info["UTExportedTypeDeclarations"] = [dict(
+                UTTypeIdentifier="com.bazstudios.fountage.project",
+                UTTypeDescription="Fountage Project",
+                UTTypeIconFile="Fountage.icns",
+                UTTypeConformsTo=["com.apple.package"],
+                UTTypeTagSpecification={"public.filename-extension": ["fountage"]},
+            )]
+            info["CFBundleDocumentTypes"] = [dict(
+                CFBundleTypeName="Fountage Project", CFBundleTypeRole="None",
+                CFBundleTypeIconFile="Fountage.icns", LSTypeIsPackage=True,
+                LSItemContentTypes=["com.bazstudios.fountage.project"],
+            )]
             (contents / "Info.plist").write_bytes(plistlib.dumps(info))
             subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)

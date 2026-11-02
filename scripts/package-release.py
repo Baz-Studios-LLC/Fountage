@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def run(*args):
-    return subprocess.check_output(args, cwd=ROOT, text=True)
+    # Cargo metadata is UTF-8 regardless of the Windows console code page.
+    return subprocess.check_output(args, cwd=ROOT, encoding="utf-8")
 
 
 def main():

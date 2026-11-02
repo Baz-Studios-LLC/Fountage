@@ -84,7 +84,7 @@ jobs:
           codesign --verify --deep --strict "$app"
           test -x "$app/Contents/MacOS/Fountage"
           /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app"
-          swift -e 'import UniformTypeIdentifiers; guard let type = UTType(filenameExtension: "fountage"), type.identifier == "com.bazstudios.fountage.project", type.conforms(to: .package) else { fatalError("Fountage package type is not registered") }; print(type.identifier)'
+          swift -e 'import UniformTypeIdentifiers; guard let type = UTType(filenameExtension: "fountage", conformingTo: .package), type.identifier == "com.bazstudios.fountage.project", type.conforms(to: .package) else { fatalError("Fountage package type is not registered") }; print(type.identifier)'
       - name: Build and check per-user Windows installer
         if: matrix.platform == 'windows'
         shell: pwsh

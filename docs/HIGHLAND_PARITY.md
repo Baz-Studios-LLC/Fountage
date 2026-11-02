@@ -980,3 +980,8 @@ Installed Highland Pro 3.3.6 (12400), owned copied fixture: one Undo clears type
 ## 2026-11-02 — macOS modifier/selection follow-up
 
 The native Quick Note Shift-arrow issue observed in the previous entry was traced to aggregate modifier updates not reaching the pinned backend's modifier-key state. Added a macOS Winit window-event adapter, with a generated-editor regression for aggregate-only Shift and release. Native three-key reverse selection of abc, replacement Undo restoring selected abc, Redo, Unicode/CRLF save and native reopen now verified on an owned blank project. Local 92 core and 190 Slint tests, Clippy, fmt and Mac build pass. Evidence output/slint-keyboard-modifiers-20261102/verification.json. Full native IME, bidi visual affinity, accessibility, larger-project latency and other-platform parity remain unverified. Public v001 prerelease infrastructure is tracked in DEVELOPMENT_LOG.md; distribution availability is not Highland parity certification.
+
+
+## Public development distribution — v001, November 2, 2026
+
+Mac Apple Silicon/Intel and Windows x64 installer/portable packages are available at https://github.com/Baz-Studios-LLC/Fountage/releases/tag/v001. Verified build/test run: https://github.com/Baz-Studios-LLC/Fountage/actions/runs/41468113640, commit eb91dd805fcc2aad9768d7c35e2b098f4ffbf59f. All assets/checksums and public prerelease state verified. See DEVELOPMENT_LOG.md and PREVIEW_RELEASE.md for exact validation and limitations. Availability is not a Highland parity claim; all incomplete feature, accessibility, input-method, save lifecycle and platform acceptance gates remain open. Public release remains v001.

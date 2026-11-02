@@ -525,7 +525,6 @@ export component Studio inherits Window {
     init => { Palette.color-scheme = ColorScheme.light; }
     changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
     MenuBar {
-        Menu { title: "Help"; MenuItem { title: "About Slint…"; activated => { about.show(); } } }
         Menu {
             title: "File";
             MenuItem { title: "New Draft…"; enabled: !root.confirm-close && !root.file-dialog-open; shortcut: @keys(Control + N); activated => { root.history-boundary(); root.file-action(5); } }
@@ -592,6 +591,7 @@ export component Studio inherits Window {
             }
         }
 
+        Menu { title: "Help"; MenuItem { title: "About Slint…"; activated => { about.show(); } } }
     }
     VerticalLayout {
         spacing: 0px;

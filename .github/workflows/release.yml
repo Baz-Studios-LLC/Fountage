@@ -41,6 +41,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           workspaces: |
             .
             prototypes/slint
@@ -66,8 +67,12 @@ jobs:
             Start-Sleep -Milliseconds 300
             $app.Refresh()
             if ($app.HasExited) { throw 'Fountage exited before creating its window' }
-          } while ($app.MainWindowHandle -eq 0 -and (Get-Date) -lt $deadline)
-          if ($app.MainWindowHandle -eq 0) { Stop-Process -Id $app.Id; throw 'No app window' }
+          } while (($app.MainWindowHandle -eq 0 -or $app.MainWindowTitle -notmatch 'Fountage') -and (Get-Date) -lt $deadline)
+          if ($app.MainWindowHandle -eq 0 -or $app.MainWindowTitle -notmatch 'Fountage') {
+            $app | Format-List Id, ProcessName, MainWindowHandle, MainWindowTitle, Responding
+            Stop-Process -Id $app.Id
+            throw 'No titled Fountage window appeared'
+          }
           Write-Output $app.MainWindowTitle
           if (-not $app.CloseMainWindow()) { throw 'Window refused normal close' }
           if (-not $app.WaitForExit(15000)) { Stop-Process -Id $app.Id; throw 'Clean startup window did not close' }

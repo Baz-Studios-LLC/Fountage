@@ -63,6 +63,11 @@ jobs:
         env:
           SLINT_BACKEND: winit-software
         run: |
+          $label = (Get-Content VERSION -Raw).Trim()
+          $number = [int]$label.Substring(1)
+          $info = (Get-Item '${{ matrix.binary }}').VersionInfo
+          if ($info.ProductVersion -ne $label -or $info.FileVersion -ne $label) { throw 'Windows display version differs from VERSION' }
+          if ($info.FileMajorPart -ne 0 -or $info.FileMinorPart -ne 0 -or $info.FileBuildPart -ne $number -or $info.FilePrivatePart -ne 0) { throw 'Windows numeric version differs from VERSION' }
           $app = Start-Process -FilePath '${{ matrix.binary }}' -PassThru
           $deadline = (Get-Date).AddSeconds(45)
           do {

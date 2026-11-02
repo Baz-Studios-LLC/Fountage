@@ -1,0 +1,35 @@
+{
+  "com.bazstudios.fountage" : {
+    "authors" : [
+
+    ],
+    "characters" : {
+
+    },
+    "createdAt" : "2026-10-14T04:48:16Z",
+    "documentFormat" : "poetry",
+    "goals" : {
+
+    },
+    "layoutPreset" : "poetry-lyrics",
+    "modifiedAt" : "2026-10-14T05:08:10Z",
+    "notes" : [
+
+    ],
+    "projectID" : "51B9C5F7-6250-4DE6-8833-B8A90FE3652A",
+    "revisions" : [
+
+    ],
+    "settings" : {
+
+    },
+    "snippets" : [
+
+    ],
+    "sourceFile" : "text.txt",
+    "version" : 2
+  },
+  "creatorIdentifier" : "com.bazstudios.fountage",
+  "type" : "public.plain-text",
+  "version" : 2
+}

@@ -1,0 +1,1114 @@
+import { Button, LineEdit, CheckBox, ComboBox, ScrollView, AboutSlint, Palette, StandardListView } from "std-widgets.slint";
+import { ManuscriptEditor } from "manuscript-editor.slint";
+import { TitlePageDialog } from "title-page-dialog.slint";
+import { ShelfPanel, ShelfRow } from "shelf-panel.slint";
+import { NewDocumentChooser } from "new-document-chooser.slint";
+export struct PreviewLine { text: string, styled: styled-text, indent: length }
+export struct OutlineRow { text: string, body: string, start-byte: int, end-byte: int }
+export component Studio inherits Window {
+    // macOS keeps its real window buttons above this full-size content view.
+    // Other platforms retain their regular system title bar.
+    in property <bool> integrated-titlebar: false;
+    callback drag-window();
+    in property <string> document-name: "Scratch draft";
+    // Derived presentation only; file identity and Save Copy names stay independent.
+    changed document-name => { root.preview-selection-valid = false; }
+    in property <string> manuscript-title;
+    property <string> category-label: ["SCREENPLAY", "COMIC", "NOVEL", "ACADEMIC", "STAGEPLAY", "AUDIO", "GENERAL", "POETRY"][root.category];
+    title: root.document-name + " — Fountage · Slint Lab · v001" + (root.dirty ? " · Edited" : "");
+    in-out property <bool> formatted-active: false;
+    public function toggle-formatted-editor() {
+        if root.category != 0 || root.confirm-close || root.file-dialog-open || editor.composing { return; }
+        if root.preview-open { root.toggle-preview(); }
+        root.formatted-finish(); root.history-boundary();
+        // Snapshot before hiding TextInput: focus-out can collapse its anchor.
+        let anchor = editor.selection-anchor;
+        let focus = editor.selection-focus;
+        root.preview-open = false;
+        root.formatted-active = !root.formatted-active;
+        if root.formatted-active { root.formatted-refresh(editor.width / 1px, editor.height / 1px); }
+        editor.focus-editor();
+        editor.set-selection-offsets(anchor, focus);
+    }
+
+    in property <image> formatted-frame;
+    in property <bool> formatted-ready: false;
+    in property <bool> formatted-composing: false;
+    callback formatted-preedit(string, int, int);
+    callback formatted-commit(string);
+    callback formatted-cancel();
+    callback formatted-finish();
+    callback formatted-focus-changed();
+    out property <bool> formatted-has-focus: editor.formatted-has-focus;
+    out property <float> formatted-surface-x: editor.surface-x;
+    out property <float> formatted-surface-y: editor.surface-y;
+    in property <bool> formatted-ime-active: false;
+    changed formatted-has-focus => { root.formatted-focus-changed(); }
+    changed formatted-surface-x => { root.formatted-focus-changed(); }
+    changed formatted-surface-y => { root.formatted-focus-changed(); }
+    in property <int> formatted-shaped-paragraphs;
+    in property <int> formatted-reused-paragraphs;
+    in property <string> formatted-status;
+    out property <string> formatted-caption: root.formatted-status != "" ? root.formatted-status : "Experimental formatted editor · " + (root.formatted-composing ? "Composing text · draft unchanged" : (root.dirty ? "Unsaved edits" : "No unsaved text changes")) + " · IME/accessibility pending";
+    callback formatted-refresh(float, float);
+    callback formatted-point(float, float, bool);
+    callback formatted-scroll(float);
+    callback formatted-key(KeyEvent) -> bool;
+    callback formatted-navigation(string, bool);
+    callback formatted-delete-word(bool);
+    callback formatted-select(int, int);
+    callback formatted-restore-selection(int, int, bool, bool);
+    in property <bool> formatted-focus-upstream: false;
+    in property <bool> formatted-anchor-upstream: false;
+    callback formatted-all();
+    in property <bool> formatted-has-selection;
+    callback formatted-selection() -> string;
+    callback formatted-insert(string);
+    public function mirror-formatted-selection(anchor: int, focus: int) { editor.mirror-selection(anchor, focus); }
+    changed category => { root.preview-selection-valid = false; if root.category != 0 { root.formatted-active = false; if root.navigation-mode == 2 { root.navigation-mode = 0; } } }
+    in property <bool> dirty: false;
+    preferred-width: 1280px; preferred-height: 860px;
+    min-width: 960px; min-height: 640px;
+
+    in-out property <string> source;
+    in-out property <bool> dark: false;
+    in-out property <bool> white-paper: true;
+    callback appearance-changed();
+    callback format-source(int);
+    callback note-source();
+    callback insert-tasks();
+    callback task-newline() -> bool;
+    out property <bool> can-edit-source: !root.preview-open && !root.confirm-close && !root.file-dialog-open && editor.has-focus && !editor.composing && !root.formatted-composing;
+    out property <bool> can-format-source: root.category == 0 && root.can-edit-source;
+
+    in-out property <int> category: 0;
+    in property <string> summary;
+    in property <string> word-count: "0";
+    in property <[string]> cast;
+    in-out property <bool> preview-open: false;
+    property <string> preview-source;
+    property <bool> preview-selection-valid;
+    property <int> preview-anchor;
+    property <int> preview-focus;
+    property <bool> preview-anchor-upstream;
+    property <bool> preview-focus-upstream;
+    out property <bool> can-toggle-preview: !root.confirm-close && !root.file-dialog-open && !root.new-draft-open && !editor.composing && !root.formatted-composing;
+    public function toggle-preview() {
+        if !root.can-toggle-preview { return; }
+        root.history-boundary();
+        if !root.preview-open {
+            // Capture before hiding the editor: TextInput focus-out collapses
+            // its anchor. Keep formatted wrap affinity as well as byte offsets.
+            root.preview-selection-valid = true;
+            root.preview-source = root.source;
+            root.preview-anchor = editor.selection-anchor;
+            root.preview-focus = editor.selection-focus;
+            root.preview-anchor-upstream = root.formatted-anchor-upstream;
+            root.preview-focus-upstream = root.formatted-focus-upstream;
+            root.preview-open = true;
+        } else {
+            root.preview-open = false;
+            if root.formatted-active { root.formatted-refresh(editor.width / 1px, editor.height / 1px); }
+            editor.focus-editor();
+            // Opening/recovering/replacing a document invalidates old offsets.
+            if root.preview-selection-valid && root.source == root.preview-source {
+                editor.set-visual-selection(root.preview-anchor, root.preview-focus, root.preview-anchor-upstream, root.preview-focus-upstream);
+            } else {
+                editor.set-selection-offsets(0, 0);
+            }
+        }
+    }
+
+    in-out property <bool> focus-mode: false;
+    public function toggle-focus() {
+        if !root.confirm-close && !root.file-dialog-open && !root.new-draft-open {
+            root.formatted-finish();
+            root.history-boundary();
+            root.field-sync();
+            root.field-boundary();
+            root.focus-mode = !root.focus-mode;
+            if root.preview-open { focus-toggle.focus(); }
+            else { editor.focus-editor(); }
+        }
+    }
+    in property <[OutlineRow]> location-rows;
+    in property <[StandardListViewItem]> location-labels;
+    in property <string> location-status;
+    in property <[OutlineRow]> outline-rows;
+    in property <[StandardListViewItem]> outline-labels;
+    in property <[OutlineRow]> note-rows;
+    in property <[StandardListViewItem]> note-labels;
+    in property <[OutlineRow]> visible-note-rows;
+    in property <[StandardListViewItem]> visible-note-labels;
+    in-out property <string> note-query;
+    in property <[OutlineRow]> task-rows;
+    in property <[StandardListViewItem]> task-labels;
+    in property <string> task-status;
+    callback toggle-task();
+    callback request-task-removal();
+    callback task-removal-action(bool);
+    in-out property <bool> task-removal-open: false;
+    in property <string> task-removal-label;
+    changed task-removal-open => { if root.task-removal-open { cancel-task-removal.focus(); } }
+    out property <bool> can-toggle-task: root.navigation-mode == 3 && root.outline-selected >= 0 && root.source == root.outline-source && root.category == root.outline-category && !root.preview-open && root.can-toggle-preview;
+    in property <string> note-filter-status;
+    callback note-filter-changed();
+    changed note-query => { root.field-sync(); root.note-filter-changed(); }
+    in-out property <int> navigation-mode: 0;
+    private property <bool> outline-tab-selected: true;
+    private property <bool> notes-tab-selected: false;
+    private property <bool> locations-tab-selected: false;
+    private property <bool> tasks-tab-selected: false;
+    function sync-navigation-tabs() {
+        root.outline-tab-selected = root.navigation-mode == 0;
+        root.notes-tab-selected = root.navigation-mode == 1;
+        root.locations-tab-selected = root.navigation-mode == 2;
+        root.tasks-tab-selected = root.navigation-mode == 3;
+    }
+    function choose-navigation(mode: int) { root.navigation-mode = mode; root.sync-navigation-tabs(); }
+    changed navigation-mode => { root.outline-selected = -1; root.sync-navigation-tabs(); }
+    in-out property <int> outline-selected: -1;
+    in property <string> outline-source;
+    in property <int> outline-category;
+    callback navigate(int);
+    callback browse-navigation(int);
+    out property <bool> navigator-has-focus: navigator.has-focus;
+    public function focus-navigation() {
+        if !root.confirm-close && !root.file-dialog-open && !root.focus-mode { root.formatted-finish(); root.history-boundary(); root.field-sync(); navigator.focus(); }
+    }
+    public function browse-source(anchor: int, focus: int) {
+        if !root.confirm-close && !root.file-dialog-open {
+            root.preview-open = false;
+            root.history-boundary();
+            editor.set-selection-offsets(anchor, focus);
+        }
+    }
+    in-out property <bool> find-open: false;
+    in-out property <string> find-query;
+    in-out property <bool> find-match-case: false;
+    in-out property <int> find-mode: 0;
+    in-out property <bool> find-wrap: true;
+    in-out property <bool> find-regex: false;
+    in-out property <string> find-status: "Enter text to search";
+    in-out property <bool> replace-open: false;
+    in-out property <string> replacement;
+    in property <bool> find-can-replace: false;
+    callback replace-match(bool);
+    callback replace-and-find();
+    callback find-step(bool);
+    callback find-invalidated();
+    public function show-find() {
+        if !root.confirm-close && !root.file-dialog-open {
+            root.formatted-finish();
+            root.history-boundary();
+            root.field-sync();
+            root.field-boundary();
+            root.preview-open = false;
+            root.find-open = true;
+            find-input.focus();
+        }
+    }
+    changed find-query => { root.field-sync(); root.find-invalidated(); }
+    changed find-match-case => { root.find-invalidated(); }
+    changed find-mode => { root.find-invalidated(); }
+    changed find-wrap => { root.find-invalidated(); }
+    changed find-regex => { root.find-invalidated(); }
+    changed source => {
+        if root.preview-open { root.preview-selection-valid = false; }
+        if root.find-open { root.find-invalidated(); }
+    }
+
+    in property <string> status: "Scratch document · Save a copy to keep your draft";
+    in property <[PreviewLine]> lines;
+    in property <string> preview-error;
+    in property <string> analysis-status: "Preparing preview…";
+    public function focus-source() {
+        if !root.confirm-close && !root.file-dialog-open {
+            if root.preview-open { root.toggle-preview(); }
+            else { editor.focus-editor(); }
+        }
+    }
+    public function select-source(anchor: int, focus: int) {
+        if !root.confirm-close && !root.file-dialog-open {
+            root.preview-open = false;
+            root.history-boundary();
+            editor.focus-editor();
+            editor.set-selection-offsets(anchor, focus);
+        }
+    }
+    public function restore-source-selection(anchor: int, focus: int, anchor-upstream: bool, focus-upstream: bool) {
+        if !root.confirm-close && !root.file-dialog-open {
+            root.preview-open = false; root.history-boundary(); editor.focus-editor();
+            editor.set-visual-selection(anchor, focus, anchor-upstream, focus-upstream);
+        }
+    }
+    in property <bool> can-undo: false;
+    in property <bool> can-redo: false;
+    in property <bool> query-can-undo: false;
+    in property <bool> query-can-redo: false;
+    in property <bool> replacement-can-undo: false;
+    in property <bool> replacement-can-redo: false;
+    in property <bool> note-query-can-undo: false;
+    in property <bool> note-query-can-redo: false;
+    out property <int> history-context: root.navigation-mode == 1 && note-input.has-focus ? 3 : (root.find-open && find-input.has-focus ? 1 : (root.find-open && root.replace-open && replace-input.has-focus ? 2 : 0));
+    property <bool> focused-can-undo: root.shelf-open ? (root.shelf-query-focused ? root.shelf-query-can-undo : root.shelf-can-undo) : root.title-page-input-focused ? root.title-can-undo : (root.history-context == 3 ? root.note-query-can-undo : (root.history-context == 1 ? root.query-can-undo : (root.history-context == 2 ? root.replacement-can-undo : root.can-undo)));
+    property <bool> focused-can-redo: root.shelf-open ? (root.shelf-query-focused ? root.shelf-query-can-redo : root.shelf-can-redo) : root.title-page-input-focused ? root.title-can-redo : (root.history-context == 3 ? root.note-query-can-redo : (root.history-context == 1 ? root.query-can-redo : (root.history-context == 2 ? root.replacement-can-redo : root.can-redo)));
+    callback field-edited(int, string);
+    callback field-input(int, string);
+    callback field-sync();
+    callback field-boundary();
+    callback field-history-action(int, bool);
+    public function select-field(kind: int, anchor: int, focus: int) {
+        if !root.confirm-close && !root.file-dialog-open {
+            if kind == 1 { find-input.focus(); find-input.set-selection-offsets(anchor, focus); }
+            if kind == 2 { replace-input.focus(); replace-input.set-selection-offsets(anchor, focus); }
+            if kind == 3 { note-input.focus(); note-input.set-selection-offsets(anchor, focus); }
+        }
+    }
+    changed replacement => { root.field-sync(); }
+    property <bool> input-focused: editor.has-focus || (root.navigation-mode == 1 && note-input.has-focus) || (root.find-open && find-input.has-focus) || (root.find-open && root.replace-open && replace-input.has-focus);
+    public function perform-history(redo: bool) {
+        if root.shelf-open { root.shelf-history(redo); return; }
+        if root.title-page-input-focused && !root.confirm-close { if root.title-page-composing { root.title-page-error = "Finish composing text before applying or editing the field history."; } else { root.title-field-history(redo); } return; }
+        if !root.confirm-close && !root.file-dialog-open && (redo ? root.focused-can-redo : root.focused-can-undo) {
+            if root.history-context == 0 { root.history-action(redo); }
+            else { root.field-history-action(root.history-context, redo); }
+        }
+    }
+    public function clipboard-action(action: int) {
+        if root.shelf-quick-focused && !root.confirm-close { shelf-panel.quick-clipboard(action); return; }
+        if root.shelf-query-focused && !root.confirm-close { shelf-panel.query-clipboard(action); return; }
+        if root.shelf-draft-input-focused && !root.confirm-close { shelf-panel.draft-clipboard(action); return; }
+        if root.title-page-input-focused && !root.confirm-close { title-dialog.clipboard(action); return; }
+        if !root.confirm-close && !root.file-dialog-open {
+            root.history-boundary();
+            root.field-sync();
+            root.field-boundary();
+            if root.navigation-mode == 1 && note-input.has-focus {
+                if action == 0 { note-input.cut(); }
+                else if action == 1 { note-input.copy(); }
+                else if action == 2 { note-input.paste(); }
+                else if action == 3 { note-input.select-all(); }
+            } else if root.find-open && find-input.has-focus {
+                if action == 0 { find-input.cut(); }
+                else if action == 1 { find-input.copy(); }
+                else if action == 2 { find-input.paste(); }
+                else if action == 3 { find-input.select-all(); }
+            } else if root.find-open && root.replace-open && replace-input.has-focus {
+                if action == 0 { replace-input.cut(); }
+                else if action == 1 { replace-input.copy(); }
+                else if action == 2 { replace-input.paste(); }
+                else if action == 3 { replace-input.select-all(); }
+            } else if editor.has-focus {
+                if action == 0 { editor.cut(); }
+                else if action == 1 { editor.copy(); }
+                else if action == 2 { editor.paste(); }
+                else if action == 3 { editor.select-all(); }
+            }
+            root.history-boundary();
+            root.field-boundary();
+        }
+    }
+    public function show-replace() {
+        if !root.confirm-close && !root.file-dialog-open {
+            root.show-find();
+            root.replace-open = true;
+            replace-input.focus();
+        }
+    }
+    callback history-input(string);
+    callback history-boundary();
+    callback history-action(bool);
+    callback project-history-action(bool) -> bool;
+    callback title-field-edited(int, string);
+    callback title-field-input(int, string);
+    callback title-field-boundary(int);
+    callback title-field-history(bool);
+    callback title-field-focus-changed();
+    out property <bool> title-page-composing: title-dialog.composing;
+    public function request-title-apply() { title-dialog.try-apply(); }
+    out property <int> title-field-index: title-dialog.focused-field;
+    out property <bool> title-page-input-focused: root.title-page-open && root.title-page-ready && title-dialog.focused-field >= 0;
+    in property <bool> title-can-undo: false;
+    in property <bool> title-can-redo: false;
+    changed title-field-index => { root.title-field-focus-changed(); }
+    public function select-title-field(index: int, anchor: int, focus: int) { if root.title-page-open && root.title-page-ready { title-dialog.select-field(index, anchor, focus); } }
+    callback title-page-requested();
+    callback title-page-action(bool);
+    in-out property <bool> title-page-open: false;
+    in property <bool> title-page-ready: false;
+    in-out property <string> title-page-error;
+    in-out property <string> title-page-title <=> title-dialog.title-value;
+    in-out property <string> title-page-credit <=> title-dialog.credit-value;
+    in-out property <string> title-page-author <=> title-dialog.author-value;
+    in-out property <string> title-page-source <=> title-dialog.source-value;
+    in-out property <string> title-page-date <=> title-dialog.date-value;
+    in-out property <string> title-page-contact <=> title-dialog.contact-value;
+    public function show-title-page() {
+        if root.category == 0 && !root.confirm-close && !root.file-dialog-open {
+            root.formatted-finish(); root.history-boundary(); root.title-page-requested();
+        }
+    }
+    callback numbering-requested();
+    callback numbering-action(int);
+    in-out property <bool> numbering-open: false;
+    in-out property <string> numbering-start: "1";
+    in-out property <bool> numbering-selected-only: false;
+    in property <bool> numbering-selection-available: false;
+    in property <string> numbering-error;
+    changed numbering-open => { if root.numbering-open { number-start.focus(); } }
+    public function show-numbering() {
+        if root.category == 0 && !root.confirm-close && !root.file-dialog-open {
+            root.formatted-finish(); root.history-boundary(); root.numbering-requested();
+        }
+    }
+    callback edited(string);
+    callback editor-edited(string, int, int);
+    out property <int> source-anchor: editor.selection-anchor;
+    out property <int> source-focus: editor.selection-focus;
+    callback history-selection(string, int, int);
+    callback history-visual-selection(string, int, int, bool, bool);
+    callback editor-visual-edited(string, int, int, bool, bool);
+    callback format-changed(int);
+    in-out property <bool> shelf-open: false;
+    in-out property <int> shelf-session: 0;
+    in property <[ShelfRow]> shelf-rows;
+    in property <bool> shelf-editable;
+    in-out property <int> shelf-kind: 0;
+    in property <int> shelf-draft-kind: 0;
+    callback shelf-kind-requested(int);
+    in property <string> shelf-status;
+    in property <bool> shelf-query-can-undo;
+    in property <bool> shelf-query-can-redo;
+    in-out property <string> shelf-query;
+    out property <bool> shelf-query-focused: shelf-panel.query-focused;
+    out property <bool> shelf-query-composing: shelf-panel.query-composing;
+    callback shelf-query-edited(string);
+    callback shelf-query-input(string);
+    public function focus-shelf-search() { shelf-panel.focus-search(); }
+    public function select-shelf-search(anchor: int, focus: int) { shelf-panel.select-search(anchor, focus); }
+    public function shelf-query-clipboard(kind: int) { shelf-panel.query-clipboard(kind); }
+    in-out property <string> shelf-quick-text;
+    in property <bool> shelf-quick-visible: true;
+    in property <bool> shelf-quick-pending;
+    out property <bool> shelf-quick-focused: shelf-panel.quick-focused;
+    out property <bool> shelf-quick-composing: shelf-panel.quick-composing;
+    out property <int> shelf-quick-anchor: shelf-panel.quick-anchor;
+    out property <int> shelf-quick-focus: shelf-panel.quick-focus;
+    callback shelf-quick-input(string);
+    callback shelf-quick-selection(string, int, int);
+    callback shelf-quick-boundary();
+    public function select-shelf-quick(anchor: int, focus: int) { shelf-panel.select-quick(anchor, focus); }
+    callback shelf-quick-edited(string);
+    callback shelf-quick-capture();
+    public function focus-shelf-quick() { shelf-panel.focus-quick(); }
+    public function shelf-quick-clipboard(kind: int) { shelf-panel.quick-clipboard(kind); }
+    in property <string> shelf-error;
+    in property <bool> shelf-can-undo;
+    in property <bool> shelf-can-redo;
+    in-out property <int> shelf-focus-position: -1;
+    callback shelf-focus-move(bool);
+    in-out property <bool> shelf-draft-open: false;
+    in property <bool> shelf-draft-existing;
+    in property <bool> shelf-draft-task;
+    in property <string> shelf-draft-target;
+    callback shelf-add-task(int);
+    in-out property <string> shelf-draft-title;
+    in-out property <string> shelf-draft-content;
+    out property <int> shelf-draft-control-index: shelf-panel.draft-control-index;
+    public function focus-shelf-draft-control(index: int) { shelf-panel.focus-draft-control(index); }
+    public function shelf-field-clipboard(index: int, kind: int) { shelf-panel.draft-field-clipboard(index, kind); }
+    out property <int> shelf-draft-field-index: shelf-panel.draft-field-index;
+    out property <bool> shelf-draft-input-focused: root.shelf-open && root.shelf-draft-open && root.shelf-draft-field-index >= 0;
+    out property <bool> shelf-draft-composing: shelf-panel.draft-composing;
+    callback shelf-edit(int);
+    callback shelf-insert(int);
+    callback shelf-capture(bool);
+    callback shelf-visibility-requested(int);
+    in property <bool> shelf-kind-visible: true;
+    in property <bool> shelf-can-capture;
+    in property <bool> shelf-replace-selection;
+    callback shelf-edit-task(int);
+    callback shelf-move-task(int, bool);
+    callback shelf-list-action(int, int);
+    public function finish-shelf-list-change() { shelf-panel.focus-default(); }
+    callback shelf-remove-requested();
+    in property <string> shelf-draft-removal-preview;
+    in property <int> shelf-draft-task-count;
+    in-out property <bool> shelf-draft-removing;
+    in property <bool> shelf-draft-task-edit;
+    callback shelf-draft-action(bool);
+    callback shelf-draft-edited(int, string);
+    callback shelf-draft-input(int, string);
+    callback shelf-draft-boundary();
+    callback shelf-draft-focused();
+    callback shelf-draft-blocked();
+    public function finish-shelf-draft(position: int) { shelf-panel.focus-after-draft(position); }
+    public function focus-shelf-draft() { shelf-panel.focus-draft(); }
+    public function move-shelf-draft-focus(backward: bool) { shelf-panel.move-draft-focus(backward); }
+    public function select-shelf-draft-field(index: int, anchor: int, focus: int) { shelf-panel.select-draft-field(index, anchor, focus); }
+    callback shelf-requested();
+    callback shelf-close();
+    callback shelf-toggle(int);
+    callback shelf-history(bool);
+    // Admission only records intent; native event monitors must not mutate UI.
+    callback shelf-queue-history(bool) -> bool;
+    callback shelf-queue-focus(bool) -> bool;
+    callback shelf-queue-apply() -> bool;
+    callback shelf-queue-clipboard(int) -> bool;
+    callback shelf-flush-history() -> bool;
+    callback shelf-reset();
+    public function capture-selection-to-shelf(cut: bool) {
+        if root.project-mode && root.can-edit-source && root.source-anchor != root.source-focus {
+            root.history-boundary(); root.shelf-requested(); root.shelf-capture(cut);
+        }
+    }
+    public function show-shelf() {
+        if root.project-mode && root.can-toggle-preview {
+            root.history-boundary(); root.shelf-requested();
+        }
+    }
+    public function finish-shelf(anchor: int, focus: int, au: bool, fu: bool) {
+        if root.preview-open { shelf-button.focus(); }
+        else { root.restore-source-selection(anchor, focus, au, fu); }
+    }
+    changed shelf-open => { if root.shelf-open { if root.shelf-draft-open { shelf-panel.focus-draft(); } else { shelf-panel.focus-default(); } } }
+    changed shelf-draft-open => { if root.shelf-open && root.shelf-draft-open { shelf-panel.focus-draft(); } }
+    // Every Save entry point uses the same guards and deferred file action.
+    // Preedit is not manuscript text and must be committed before saving.
+    out property <bool> can-save-copy: !root.confirm-close && !root.file-dialog-open && !editor.composing && !root.formatted-composing;
+    public function request-save-copy() {
+        if root.can-save-copy {
+            // The Rust dispatcher prepares history after native menu dispatch
+            // returns, so model changes cannot re-enter a borrowed menu.
+            root.file-action(2);
+        }
+    }
+    callback save-copy();
+    callback recover();
+    callback open-project();
+    callback open-source();
+    callback new-draft();
+    callback new-category(int);
+    in-out property <bool> new-draft-open: false;
+    in property <bool> new-show-open-actions: true;
+    in-out property <int> new-layout-choice <=> new-chooser.layout-choice;
+    in-out property <int> new-academic-style <=> new-chooser.academic-style;
+    in property <string> academic-style-label;
+    in-out property <bool> new-include-starter <=> new-chooser.include-starter;
+    in-out property <int> new-category-choice <=> new-chooser.choice;
+    changed new-draft-open => { if root.new-draft-open { new-chooser.reset(); } }
+    in property <bool> project-mode: false;
+    in property <string> recovery-status;
+    in-out property <bool> confirm-close: false;
+    callback close-choice(int);
+    callback request-close();
+    callback file-action(int);
+    callback can-terminate() -> bool;
+    in-out property <bool> file-dialog-open: false;
+    changed confirm-close => {
+        if root.confirm-close { keep-writing.focus(); }
+        else { editor.focus-editor(); }
+    }
+    private property <bool> compact: false;
+    private property <bool> narrow-toolbar: false;
+    changed width => {
+        root.compact = root.width <= 1100px;
+        root.narrow-toolbar = root.width <= 1150px;
+    }
+    property <color> ink: dark ? #eee9e1 : #252c29;
+    property <color> surface: dark ? #2b2b2b : #efefed;
+    property <color> sidebar: dark ? #232323 : #f6f6f4;
+    property <color> secondary-ink: dark ? #aaa9a5 : #6b6b68;
+    property <color> separator: dark ? #424242 : #d0d0ce;
+    background: surface;
+    init => { Palette.color-scheme = ColorScheme.light; }
+    changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+    MenuBar {
+        Menu { title: "Help"; MenuItem { title: "About Slint…"; activated => { about.show(); } } }
+        Menu {
+            title: "File";
+            MenuItem { title: "New Draft…"; enabled: !root.confirm-close && !root.file-dialog-open; shortcut: @keys(Control + N); activated => { root.history-boundary(); root.file-action(5); } }
+            MenuItem { title: "Open Project…"; enabled: !root.confirm-close && !root.file-dialog-open; shortcut: @keys(Control + O); activated => { root.history-boundary(); root.file-action(0); } }
+            MenuItem { title: "Open Source…"; enabled: !root.confirm-close && !root.file-dialog-open; shortcut: @keys(Control + Shift + O); activated => { root.history-boundary(); root.file-action(4); } }
+            MenuItem { title: "Recover Draft…"; enabled: !root.confirm-close && !root.file-dialog-open; activated => { root.history-boundary(); root.file-action(1); } }
+            MenuItem { title: root.project-mode ? "Save Project Copy…" : "Save a Copy…"; enabled: root.can-save-copy; shortcut: @keys(Control + S); activated => { root.request-save-copy(); } }
+            MenuSeparator {}
+            MenuItem { title: "Close"; enabled: !root.confirm-close && (!root.file-dialog-open || root.new-draft-open); shortcut: @keys(Control + W); activated => { root.file-action(3); } }
+        }
+        Menu {
+            title: "Edit";
+            MenuItem { title: "Undo"; enabled: !root.confirm-close && (!root.file-dialog-open || root.title-page-input-focused || root.shelf-open) && root.focused-can-undo; shortcut: @keys(Control + Z); activated => { root.perform-history(false); } }
+            MenuItem { title: "Redo"; enabled: !root.confirm-close && (!root.file-dialog-open || root.title-page-input-focused || root.shelf-open) && root.focused-can-redo; shortcut: @keys(Control + Shift + Z); activated => { root.perform-history(true); } }
+            MenuSeparator {}
+            MenuItem { title: "Cut"; enabled: !root.confirm-close && ((!root.file-dialog-open && root.input-focused && (root.history-context != 0 || !root.formatted-active || root.formatted-has-selection)) || root.title-page-input-focused || root.shelf-draft-input-focused || root.shelf-query-focused || root.shelf-quick-focused); shortcut: @keys(Control + X); activated => { root.clipboard-action(0); } }
+            MenuItem { title: "Copy"; enabled: !root.confirm-close && ((!root.file-dialog-open && root.input-focused && (root.history-context != 0 || !root.formatted-active || root.formatted-has-selection)) || root.title-page-input-focused || root.shelf-draft-input-focused || root.shelf-query-focused || root.shelf-quick-focused); shortcut: @keys(Control + C); activated => { root.clipboard-action(1); } }
+            MenuItem { title: "Paste"; enabled: !root.confirm-close && ((!root.file-dialog-open && root.input-focused) || root.title-page-input-focused || root.shelf-draft-input-focused || root.shelf-query-focused || root.shelf-quick-focused); shortcut: @keys(Control + V); activated => { root.clipboard-action(2); } }
+            MenuItem { title: "Select All"; enabled: !root.confirm-close && ((!root.file-dialog-open && root.input-focused) || root.title-page-input-focused || root.shelf-draft-input-focused || root.shelf-query-focused || root.shelf-quick-focused); shortcut: @keys(Control + A); activated => { root.clipboard-action(3); } }
+            MenuSeparator {}
+            MenuItem { title: "Cut to Shelf"; enabled: root.project-mode && root.can-edit-source && root.source-anchor != root.source-focus; activated => { root.capture-selection-to-shelf(true); } }
+            MenuItem { title: "Copy to Shelf"; enabled: root.project-mode && root.can-edit-source && root.source-anchor != root.source-focus; activated => { root.capture-selection-to-shelf(false); } }
+            MenuSeparator {}
+            MenuItem { title: "Find…"; enabled: !root.confirm-close && !root.file-dialog-open; shortcut: @keys(Control + F); activated => { root.show-find(); } }
+            MenuItem { title: "Find and Replace…"; enabled: !root.confirm-close && !root.file-dialog-open; shortcut: @keys(Control + Alt + F); activated => { root.show-replace(); } }
+            MenuItem { title: "Find Next"; enabled: !root.confirm-close && !root.file-dialog-open && root.find-query != ""; shortcut: @keys(Control + G); activated => { root.find-step(false); } }
+            MenuItem { title: "Find Previous"; enabled: !root.confirm-close && !root.file-dialog-open && root.find-query != ""; shortcut: @keys(Control + Shift + G); activated => { root.find-step(true); } }
+        }
+        Menu {
+            title: "Format";
+            MenuItem { title: "Bold"; enabled: root.can-format-source; shortcut: @keys(Control + B); activated => { root.format-source(0); } }
+            MenuItem { title: "Italic"; enabled: root.can-format-source; shortcut: @keys(Control + I); activated => { root.format-source(1); } }
+            MenuItem { title: "Underline"; enabled: root.can-format-source; shortcut: @keys(Control + U); activated => { root.format-source(2); } }
+            MenuSeparator {}
+            MenuItem { title: "To-Do List"; enabled: root.can-edit-source; activated => { root.insert-tasks(); } }
+            MenuItem { title: "Insert Note"; enabled: root.can-edit-source; shortcut: @keys(Control + "/"); activated => { root.note-source(); } }
+        }
+        Menu {
+            title: "Tools";
+            MenuItem { title: "Shelf…"; enabled: root.project-mode && root.can-toggle-preview; activated => { root.show-shelf(); } }
+            MenuItem { title: "Title Page…"; enabled: root.category == 0 && !root.confirm-close && !root.file-dialog-open; activated => { root.show-title-page(); } }
+            MenuItem { title: "Scene Numbers…"; enabled: root.category == 0 && !root.confirm-close && !root.file-dialog-open; activated => { root.show-numbering(); } }
+        }
+        Menu {
+            title: "View";
+            MenuItem { title: root.preview-open ? "Edit Manuscript" : "Preview";
+                enabled: root.can-toggle-preview;
+                shortcut: @keys(Control + E);
+                activated => { root.toggle-preview(); }
+            }
+            MenuItem { title: "Focus Navigator";
+                enabled: !root.confirm-close && !root.file-dialog-open && !root.focus-mode;
+                shortcut: @keys(F6);
+                activated => { root.focus-navigation(); }
+            }
+            MenuItem { title: root.focus-mode ? "Leave Focus" : "Focus";
+                enabled: !root.confirm-close && !root.file-dialog-open && !root.new-draft-open;
+                shortcut: @keys(Control + Shift + F);
+                activated => { root.toggle-focus(); }
+            }
+            MenuItem { title: root.formatted-active ? "Use Standard Source Editor" : "Try Experimental Formatted Editor";
+                enabled: root.category == 0 && !root.confirm-close && !root.file-dialog-open && !editor.composing;
+                activated => { root.toggle-formatted-editor(); }
+            }
+        }
+
+    }
+    VerticalLayout {
+        spacing: 0px;
+        Rectangle { min-width: 0px; preferred-width: 0px; height: 48px; background: root.dark ? #292929 : #f4f4f2;
+            TouchArea {
+                enabled: root.integrated-titlebar;
+                pointer-event(event) => {
+                    if event.kind == PointerEventKind.down && event.button == PointerEventButton.left { root.drag-window(); }
+                }
+            }
+            HorizontalLayout { padding-left: root.integrated-titlebar ? 96px : 24px; padding-right: 24px; padding-top: 8px; padding-bottom: 8px; spacing: 12px;
+                Text { text: root.document-name; vertical-alignment: center; font-size: 12px; font-weight: 600; color: root.ink; overflow: elide; min-width: 0px; horizontal-stretch: 1; }
+                Button { enabled: !root.confirm-close && !root.file-dialog-open; text: "Find"; clicked => { root.show-find(); } }
+                shelf-button := Button { enabled: root.project-mode && root.can-toggle-preview; text: "Shelf"; clicked => { root.show-shelf(); } }
+                Button { enabled: root.can-toggle-preview; text: root.preview-open ? "Edit manuscript" : "Preview"; clicked => { root.toggle-preview(); } }
+                focus-toggle := Button { enabled: !root.confirm-close && !root.file-dialog-open && !root.new-draft-open; text: root.focus-mode ? "Leave Focus" : "Focus"; clicked => { root.toggle-focus(); } }
+                Button { enabled: !root.confirm-close && !root.file-dialog-open; text: "Appearance"; clicked => { appearance.show(); } }
+                Button { enabled: root.can-save-copy; text: "Save a Copy…"; clicked => { root.request-save-copy(); } }
+            }
+        }
+        Rectangle { height: 1px; background: root.separator; }
+        HorizontalLayout { spacing: 0px;
+            Rectangle { visible: !root.focus-mode; width: root.focus-mode ? 0px : 248px; min-height: 0px; clip: true; background: root.sidebar;
+                VerticalLayout { width: 248px; padding: 16px; padding-top: 25px; spacing: 18px;
+                    VerticalLayout { spacing: 4px;
+                        Text { text: "Fountage"; font-family: "Georgia"; font-size: 30px; color: root.ink; }
+                        Text { text: "by Baz Studios"; font-size: 11px; color: root.secondary-ink; }
+                    }
+                    Rectangle { height: 12px; background: transparent; }
+                    Text { text: "WRITING CATEGORY"; color: root.secondary-ink; font-size: 11px; }
+                    ComboBox { enabled: !root.confirm-close && !root.file-dialog-open && !root.project-mode; model: ["Screenplay", "Comic", "Novel", "Academic", "Stageplay", "Audio", "General", "Poetry"]; current-index <=> root.category; selected(index) => { root.history-boundary(); root.format-changed(self.current-index); } }
+                    if root.project-mode && root.category == 3: Text { text: "Required style: " + (root.academic-style-label == "" ? "Not selected" : root.academic-style-label); wrap: word-wrap; color: root.secondary-ink; font-size: 11px; }
+                    if root.project-mode: Text { text: "Format kept from this project"; wrap: word-wrap; color: root.secondary-ink; font-size: 11px; }
+
+                    HorizontalLayout { spacing: 1px;
+                        Button { text: "Outline"; checkable: true; checked <=> root.outline-tab-selected;
+                            enabled: !root.confirm-close && !root.file-dialog-open;
+                            clicked => { root.choose-navigation(0); }
+                        }
+                        Button { text: "Notes"; checkable: true; checked <=> root.notes-tab-selected;
+                            enabled: !root.confirm-close && !root.file-dialog-open;
+                            clicked => { root.choose-navigation(1); }
+                        }
+                    }
+                    HorizontalLayout { spacing: 1px;
+                    if root.category == 0: Button {
+                        text: "Locations"; checkable: true; checked <=> root.locations-tab-selected;
+                        enabled: !root.confirm-close && !root.file-dialog-open;
+                        clicked => { root.choose-navigation(2); }
+                    }
+                    Button { text: "To-Dos"; checkable: true; checked <=> root.tasks-tab-selected;
+                        enabled: !root.confirm-close && !root.file-dialog-open;
+                        clicked => { root.choose-navigation(3); }
+                    }
+                    }
+                    if root.navigation-mode == 3: Text { text: root.task-status; color: root.secondary-ink; font-size: 11px; }
+                    if root.navigation-mode == 3 && root.task-labels.length == 0: Text { text: "Add [ ] followed by a task in your manuscript. Completed tasks use [x]."; wrap: word-wrap; color: root.secondary-ink; font-size: 12px; }
+                    if root.navigation-mode == 3: HorizontalLayout { spacing: 6px;
+                        Button { text: "Toggle Completion"; enabled: root.can-toggle-task; clicked => { root.toggle-task(); } }
+                        Button { text: "Remove…"; enabled: root.can-toggle-task; clicked => { root.request-task-removal(); } }
+                    }
+                    if root.navigation-mode == 2: Text { text: root.location-status; color: root.secondary-ink; font-size: 11px; }
+                    if root.navigation-mode == 2 && root.location-labels.length == 0: Text { text: "Locations appear as you add scene headings."; wrap: word-wrap; color: root.secondary-ink; }
+                    Rectangle { visible: root.navigation-mode == 1; height: root.navigation-mode == 1 ? 32px : 0px;
+                        note-input := LineEdit {
+                            width: parent.width; height: parent.height;
+                            enabled: root.navigation-mode == 1 && !root.confirm-close && !root.file-dialog-open;
+                            placeholder-text: "Filter notes"; accessible-label: "Filter notes";
+                            text <=> root.note-query;
+                            edited(value) => { root.field-edited(3, value); }
+                            key-pressed(event) => {
+                                if event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta {
+                                    if event.text == "z" || event.text == "Z" { root.perform-history(event.modifiers.shift); return accept; }
+                                    if event.text == "y" || event.text == "Y" { root.perform-history(true); return accept; }
+                                }
+                                if event.text == Key.Escape { root.note-query = ""; editor.focus-editor(); return accept; }
+                                if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { root.field-boundary(); }
+                                else { root.field-input(3, event.text); }
+                                return reject;
+                            }
+                        }
+                    }
+                    if root.navigation-mode == 1: Text { text: root.note-filter-status; color: root.secondary-ink; font-size: 11px; }
+                    if root.navigation-mode == 1 && root.note-labels.length > 0 && root.visible-note-labels.length == 0: Text { text: "No matching notes"; color: root.secondary-ink; wrap: word-wrap; }
+                    if root.navigation-mode == 1 && root.note-labels.length == 0: Text { text: "Notes appear here when you add [[a note]] to your draft."; color: root.secondary-ink; wrap: word-wrap; }
+                    FocusScope {
+                        vertical-stretch: 1;
+                        forward-focus: navigator;
+                        capture-key-pressed(event) => {
+                            if !event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta {
+                                if event.text == " " && root.can-toggle-task { root.toggle-task(); return accept; }
+                                if event.text == Key.Return && root.outline-selected >= 0 { root.navigate(root.outline-selected); return accept; }
+                                if event.text == Key.Escape { root.focus-source(); return accept; }
+                            }
+                            return reject;
+                        }
+                        navigator := StandardListView {
+                            enabled: !root.confirm-close && !root.file-dialog-open;
+                            model: root.navigation-mode == 1 ? root.visible-note-labels : (root.navigation-mode == 2 ? root.location-labels : (root.navigation-mode == 3 ? root.task-labels : root.outline-labels));
+                            current-item <=> root.outline-selected;
+                            current-item-changed(index) => { root.browse-navigation(index); }
+                            item-pointer-event(index, event, position) => {
+                                if event.kind == PointerEventKind.up && event.button == PointerEventButton.left { root.navigate(index); }
+                            }
+                        }
+                    }
+                    Text { text: root.recovery-status; wrap: word-wrap; color: root.secondary-ink; font-size: 11px; }
+                }
+            }
+            Rectangle { width: root.focus-mode ? 0px : 1px; background: root.separator; }
+            VerticalLayout { min-width: 0px; preferred-width: 0px; horizontal-stretch: 1; padding: 28px; padding-top: 25px; padding-bottom: 16px; spacing: 22px;
+                VerticalLayout { spacing: 7px;
+                    Text { text: root.preview-open ? "ON THE PAGE · PREVIEW" : "THE MANUSCRIPT"; color: root.secondary-ink; font-size: 10px; letter-spacing: 2px; }
+                    HorizontalLayout { spacing: 12px;
+                        Text { text: root.manuscript-title != "" ? root.manuscript-title : root.document-name; font-family: "Georgia"; font-size: 26px; color: root.ink; horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; overflow: elide; }
+
+                        Text { text: root.category-label; horizontal-alignment: right; font-size: 9px; letter-spacing: 1.3px; color: root.secondary-ink; vertical-alignment: center; }
+                    }
+                }
+                Rectangle {
+                    visible: root.find-open;
+                    height: root.find-open ? (root.replace-open ? 256px : 160px) : 0px;
+                    background: root.sidebar;
+                    VerticalLayout { padding: 8px; spacing: 6px;
+                        HorizontalLayout { spacing: 6px;
+                            find-input := LineEdit {
+                                enabled: root.find-open && !root.confirm-close && !root.file-dialog-open;
+                                placeholder-text: "Find in draft";
+                                accessible-label: "Find in draft";
+                                text <=> root.find-query;
+                                    edited(value) => { root.field-edited(1, value); }
+                                horizontal-stretch: 1;
+                                min-width: 0px;
+                                accepted => { root.find-step(false); }
+                                key-pressed(event) => {
+                                    if event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta {
+                                        if event.text == "z" || event.text == "Z" { root.perform-history(event.modifiers.shift); return accept; }
+                                        if event.text == "y" || event.text == "Y" { root.perform-history(true); return accept; }
+                                    }
+                                    if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { root.field-boundary(); }
+                                    else { root.field-input(1, event.text); }
+                                    if event.text == Key.Return && event.modifiers.shift {
+                                        root.find-step(true);
+                                        return accept;
+                                    }
+                                    if event.text == Key.Escape {
+                                        root.find-open = false;
+                                        editor.focus-editor();
+                                        return accept;
+                                    }
+                                    return reject;
+                                }
+                            }
+                            Button { enabled: root.find-open && !root.confirm-close && !root.file-dialog-open; text: root.replace-open ? "Hide Replace" : "Replace…"; clicked => { root.replace-open = !root.replace-open; } }
+                            Button { enabled: root.find-open && !root.confirm-close && !root.file-dialog-open; text: "Done"; clicked => { root.find-open = false; editor.focus-editor(); } }
+                        }
+                        HorizontalLayout { spacing: 6px;
+                            CheckBox { enabled: root.find-open && !root.confirm-close && !root.file-dialog-open; text: "Match case"; checked <=> root.find-match-case; }
+                            ComboBox { enabled: root.find-open && !root.confirm-close && !root.file-dialog-open; model: ["Contains", "Starts with", "Whole word"]; current-index <=> root.find-mode; accessible-label: "Search matching mode"; }
+                        }
+                        HorizontalLayout { spacing: 6px;
+                            CheckBox { enabled: root.find-open && !root.confirm-close && !root.file-dialog-open; text: "Regular expression"; checked <=> root.find-regex; }
+                            CheckBox { enabled: root.find-open && !root.confirm-close && !root.file-dialog-open; text: "Wrap around"; checked <=> root.find-wrap; }
+                        }
+                        HorizontalLayout { spacing: 6px;
+                            Button { enabled: root.find-open && !root.confirm-close && !root.file-dialog-open && root.find-query != ""; text: "Previous"; clicked => { root.find-step(true); } }
+                            Button { enabled: root.find-open && !root.confirm-close && !root.file-dialog-open && root.find-query != ""; text: "Next"; clicked => { root.find-step(false); } }
+                        }
+                        Rectangle {
+                            visible: root.replace-open;
+                            height: root.replace-open ? 90px : 0px;
+                            VerticalLayout { spacing: 6px;
+                                replace-input := LineEdit {
+                                    enabled: root.find-open && root.replace-open && !root.confirm-close && !root.file-dialog-open;
+                                    placeholder-text: root.find-regex ? "Replace with ($1, ${name}, $$)" : "Replace with (empty deletes)";
+                                    accessible-label: "Replace with";
+                                    text <=> root.replacement;
+                                    edited(value) => { root.field-edited(2, value); }
+                                    min-width: 0px;
+                                    accepted => { root.replace-match(false); }
+                                    key-pressed(event) => {
+                                        if event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta {
+                                            if event.text == "z" || event.text == "Z" { root.perform-history(event.modifiers.shift); return accept; }
+                                            if event.text == "y" || event.text == "Y" { root.perform-history(true); return accept; }
+                                        }
+                                        if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { root.field-boundary(); }
+                                        else { root.field-input(2, event.text); }
+                                        if event.text == Key.Escape { root.find-open = false; editor.focus-editor(); return accept; }
+                                        return reject;
+                                    }
+                                }
+                                HorizontalLayout { spacing: 6px;
+                                    Button { enabled: root.find-open && root.replace-open && !root.confirm-close && !root.file-dialog-open && root.find-can-replace; text: "Replace"; clicked => { root.replace-match(false); } }
+                                    Button { enabled: root.find-open && root.replace-open && !root.confirm-close && !root.file-dialog-open && root.find-can-replace; text: "Replace & Find"; clicked => { root.replace-and-find(); } }
+                                    Button { enabled: root.find-open && root.replace-open && !root.confirm-close && !root.file-dialog-open && root.find-query != ""; text: "Replace All"; clicked => { root.replace-match(true); } }
+                                }
+                                Text { visible: root.find-regex; text: "$1 / ${name}: capture · $$: dollar"; color: root.secondary-ink; font-size: 10px; overflow: elide; }
+                            }
+                        }
+                        Text { text: root.find-status; color: root.secondary-ink; font-size: 11px; overflow: elide; }
+                    }
+                }
+                editor := ManuscriptEditor {
+                    formatted: root.formatted-active;
+                    formatted-frame: root.formatted-frame;
+                    formatted-cancel => { root.formatted-cancel(); }
+                    formatted-finish => { root.formatted-finish(); }
+                    formatted-ready: root.formatted-ready;
+                    formatted-dark: root.dark && !root.white-paper;
+                    formatted-refresh(w, h) => { if !root.preview-open { root.formatted-refresh(w, h); } }
+                    formatted-point(x, y, extend) => { root.formatted-point(x, y, extend); }
+                    formatted-scroll(delta) => { root.formatted-scroll(delta); }
+                    formatted-key(event) => {
+                        if event.text == Key.Return && !event.modifiers.shift && !event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta && root.task-newline() { return true; }
+                        return root.formatted-key(event);
+                    }
+                    formatted-select(a, b) => { root.formatted-select(a, b); }
+                    formatted-restore-selection(a, b, au, fu) => { root.formatted-restore-selection(a, b, au, fu); }
+                    formatted-all => { root.formatted-all(); }
+                    formatted-has-selection: root.formatted-has-selection;
+                    formatted-selection => { root.formatted-selection() }
+                    formatted-insert(value) => { root.formatted-insert(value); }
+                    visible: !root.preview-open; min-height: root.preview-open ? 0px : 64px; max-height: root.preview-open ? 0px : 100000px; vertical-stretch: root.preview-open ? 0 : 1; enabled: !root.confirm-close && !root.file-dialog-open; text <=> root.source; font-family: "Courier"; font-size: 16px;
+                    paper: root.white-paper || !root.dark ? #fffdf7 : #1e1e1e;
+                    ink: root.white-paper || !root.dark ? #242922 : #eee9e1;
+                    frame: root.separator;
+                    can-undo: root.can-undo; can-redo: root.can-redo;
+                    boundary => { root.history-boundary(); }
+                    history-action(redo) => { root.history-action(redo); }
+                    edited(value, anchor, focus) => { root.editor-edited(value, anchor, focus); }
+                    selection-changed(value, anchor, focus) => { root.history-selection(value, anchor, focus); }
+                    key-pressed(event) => {
+                        if event.text == Key.Return && !event.modifiers.shift && !event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta && root.task-newline() { return accept; }
+                        if root.find-open && event.text == Key.Escape {
+                            root.find-open = false;
+                            root.history-boundary();
+                            return accept;
+                        }
+                        if event.modifiers.control && event.modifiers.alt && !event.modifiers.meta && (event.text == "f" || event.text == "F") {
+                            root.show-replace();
+                            return accept;
+                        }
+                        if event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta {
+                            if !event.modifiers.shift {
+                                if event.text == "/" { root.note-source(); return accept; }
+                                if event.text == "b" || event.text == "B" { root.format-source(0); return accept; }
+                                if event.text == "i" || event.text == "I" { root.format-source(1); return accept; }
+                                if event.text == "u" || event.text == "U" { root.format-source(2); return accept; }
+                            }
+                            if event.modifiers.shift && (event.text == "f" || event.text == "F") {
+                                root.toggle-focus();
+                                return accept;
+                            }
+                            if event.text == "f" || event.text == "F" {
+                                root.show-find();
+                                return accept;
+                            }
+                            if event.text == "g" || event.text == "G" {
+                                root.find-step(event.modifiers.shift);
+                                return accept;
+                            }
+                            if event.text == "z" || event.text == "Z" {
+                                root.history-action(event.modifiers.shift);
+                                return accept;
+                            }
+                            if event.text == "y" || event.text == "Y" {
+                                root.history-action(true);
+                                return accept;
+                            }
+                        }
+                        if event.modifiers.control || event.modifiers.alt || event.modifiers.meta {
+                            root.history-boundary();
+                        } else {
+                            root.history-input(event.text);
+                        }
+                        return reject;
+                    }
+                }
+                if root.preview-open: Rectangle { vertical-stretch: 1; background: root.white-paper ? #fffdf7 : (root.dark ? #1e1e1e : #fffdf7);
+                    ScrollView { VerticalLayout { padding: 28px; spacing: 5px;
+                        if root.preview-error != "": Text { text: root.preview-error; color: root.white-paper || !root.dark ? #242922 : #eee9e1; wrap: word-wrap; font-size: 12px; }
+                        for line in root.lines: HorizontalLayout {
+                            Rectangle { width: line.indent; background: transparent; }
+                            StyledText { text: line.styled; default-font-family: "Courier"; default-font-size: 14px; default-color: root.white-paper || !root.dark ? #242922 : #eee9e1; min-width: 0px; min-height: 18px; horizontal-stretch: 1; accessible-role: text; accessible-label: line.text; }
+                        }
+                        Rectangle { min-height: 20px; vertical-stretch: 1; background: transparent; }
+                    } }
+                }
+            }
+            Rectangle { width: root.focus-mode ? 0px : 1px; background: root.separator; }
+            Rectangle { visible: !root.focus-mode; width: root.focus-mode ? 0px : (root.compact ? 190px : 224px); min-height: 0px; clip: true; background: root.sidebar;
+                VerticalLayout { width: root.compact ? 190px : 224px; padding: 23px; padding-top: 25px; spacing: 18px;
+                    Text { text: "DRAFT AT A GLANCE"; font-size: 9px; letter-spacing: 1.4px; color: root.secondary-ink; }
+                    Text { text: root.word-count; font-family: "Georgia"; font-size: 43px; color: root.ink; }
+                    Text { text: "words in your draft"; font-size: 11px; color: root.secondary-ink; }
+                    Rectangle { height: 1px; background: root.separator; }
+                    Text { text: "Characters"; font-family: "Georgia"; font-size: 22px; color: root.ink; }
+                    ScrollView { height: min(180px, max(64px, root.cast.length * 32px));
+                        VerticalLayout { spacing: 18px;
+                            for character in root.cast: Text { text: character; color: root.ink; font-size: 11px; wrap: word-wrap; }
+                            if root.cast.length == 0: Text { text: "Your cast will appear as you add dialogue."; color: root.secondary-ink; font-size: 11px; wrap: word-wrap; }
+                            Rectangle { vertical-stretch: 1; background: transparent; }
+                        }
+                    }
+                    Rectangle { height: 1px; background: root.separator; }
+                    Text { text: "One line at a time."; font-family: "Georgia"; font-size: 20px; color: root.ink; wrap: word-wrap; }
+                    Text { text: "The rest of the world can wait."; color: root.secondary-ink; font-size: 11px; wrap: word-wrap; }
+                    Rectangle { min-height: 0px; vertical-stretch: 1; background: transparent; }
+                }
+            }
+        }
+        Rectangle { height: 1px; background: root.separator; }
+        HorizontalLayout { min-width: 0px; preferred-width: 0px; padding: 12px; spacing: 16px;
+            Text { text: root.formatted-active ? root.formatted-caption : root.status; vertical-alignment: center; color: root.secondary-ink; font-size: 11px; horizontal-stretch: 1; min-width: 0px; overflow: elide; }
+            Text { text: "v001"; vertical-alignment: center; color: root.secondary-ink; font-size: 10px; }
+
+        }
+    }
+    Rectangle {
+        visible: root.confirm-close;
+        background: #00000080;
+        TouchArea {} // Keep pointer interaction within the close confirmation.
+        Rectangle {
+            width: 460px; height: 240px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: root.surface;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: root.dark ? #747474 : #86968a;
+            FocusScope {
+                enabled: root.confirm-close;
+                focus-on-click: false;
+                focus-on-tab-navigation: false;
+                capture-key-pressed(event) => {
+                    if event.text == Key.Escape {
+                        root.close-choice(2);
+                        return accept;
+                    }
+                    if event.text == Key.Tab || event.text == Key.Backtab {
+                        if event.modifiers.shift || event.text == Key.Backtab {
+                            if keep-writing.has-focus { save-close.focus(); }
+                            else if save-close.has-focus { discard-close.focus(); }
+                            else { keep-writing.focus(); }
+                        } else {
+                            if keep-writing.has-focus { discard-close.focus(); }
+                            else if discard-close.has-focus { save-close.focus(); }
+                            else { keep-writing.focus(); }
+                        }
+                        return accept;
+                    }
+                    return reject;
+                }
+                VerticalLayout { padding: 24px; spacing: 18px;
+                    Text { text: root.project-mode ? "Save changes to your project draft?" : "Save changes to your scratch draft?"; color: root.ink; font-size: 20px; font-weight: 600; wrap: word-wrap; }
+                    Text { text: root.project-mode ? "Save a new project copy before closing. Metadata and attachments are kept." : "Save a copy before closing, or keep writing. Discard closes this scratch draft without saving."; color: root.ink; wrap: word-wrap; }
+                    HorizontalLayout { spacing: 10px;
+                        keep-writing := Button { enabled: root.confirm-close; text: "Keep Writing"; clicked => { root.close-choice(2); } }
+                        discard-close := Button { enabled: root.confirm-close; text: "Discard"; clicked => { root.close-choice(1); } }
+                        save-close := Button { enabled: root.confirm-close; text: root.project-mode ? "Save Project Copy…" : "Save a Copy…"; clicked => { root.close-choice(0); } }
+                    }
+                }
+            }
+        }
+    }
+    Rectangle {
+        visible: root.task-removal-open; background: #00000088;
+        Rectangle {
+            width: 500px; height: 280px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            background: root.sidebar; border-radius: 12px; border-width: 1px; border-color: root.separator;
+            FocusScope {
+                enabled: root.task-removal-open;
+                capture-key-pressed(event) => {
+                    if event.text == Key.Escape { root.task-removal-action(false); return accept; }
+                    if event.text == Key.Return { root.task-removal-action(remove-task.has-focus); return accept; }
+                    if event.text == Key.Tab || event.text == Key.Backtab {
+                        if cancel-task-removal.has-focus { remove-task.focus(); } else { cancel-task-removal.focus(); }
+                        return accept;
+                    }
+                    return reject;
+                }
+                VerticalLayout { padding: 24px; spacing: 16px;
+                    Text { text: "Remove this to-do?"; color: root.ink; font-size: 22px; font-weight: 600; }
+                    Text { text: root.task-removal-label == "" ? "Untitled task" : root.task-removal-label; color: root.ink; wrap: word-wrap; max-height: 64px; overflow: elide; }
+                    Text { text: "The entire manuscript line, including inline notes, will be removed. Undo restores it."; color: root.secondary-ink; wrap: word-wrap; font-size: 13px; }
+                    HorizontalLayout { spacing: 10px;
+                        Rectangle { background: transparent; horizontal-stretch: 1; }
+                        cancel-task-removal := Button { text: "Cancel"; enabled: root.task-removal-open; clicked => { root.task-removal-action(false); } }
+                        remove-task := Button { text: "Remove To-Do"; enabled: root.task-removal-open; clicked => { root.task-removal-action(true); } }
+                    }
+                }
+            }
+        }
+    }
+    Rectangle {
+        visible: root.numbering-open;
+        background: #00000088;
+        Rectangle {
+            width: 520px; height: 330px;
+            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            background: root.sidebar; border-radius: 12px; border-width: 1px; border-color: root.separator;
+            FocusScope {
+                enabled: root.numbering-open;
+                capture-key-pressed(event) => {
+                    if event.text == Key.Escape { root.numbering-action(-1); return accept; }
+                    if event.text == Key.Return { root.numbering-action(remove-numbers.has-focus ? 1 : (cancel-numbers.has-focus ? -1 : 0)); return accept; }
+                    if event.text == Key.Tab || event.text == Key.Backtab {
+                        if event.modifiers.shift || event.text == Key.Backtab {
+                            if number-start.has-focus { add-numbers.focus(); }
+                            else if add-numbers.has-focus { remove-numbers.focus(); }
+                            else if remove-numbers.has-focus { cancel-numbers.focus(); }
+                            else if cancel-numbers.has-focus && root.numbering-selection-available { number-scope.focus(); }
+                            else { number-start.focus(); }
+                        } else {
+                            if number-start.has-focus && root.numbering-selection-available { number-scope.focus(); }
+                            else if number-start.has-focus || number-scope.has-focus { cancel-numbers.focus(); }
+                            else if cancel-numbers.has-focus { remove-numbers.focus(); }
+                            else if remove-numbers.has-focus { add-numbers.focus(); }
+                            else { number-start.focus(); }
+                        }
+                        return accept;
+                    }
+                    return reject;
+                }
+                VerticalLayout { padding: 24px; spacing: 16px;
+                    Text { text: "Scene Numbers"; font-family: "Georgia"; font-size: 25px; color: root.ink; }
+                    Text { text: "Number visible scene headings in manuscript order. Existing numbers will be replaced."; wrap: word-wrap; color: root.secondary-ink; font-size: 13px; }
+                    HorizontalLayout { spacing: 14px;
+                        Text { text: "Start at"; color: root.ink; vertical-alignment: center; font-size: 13px; }
+                        number-start := LineEdit { enabled: root.numbering-open; text <=> root.numbering-start; accessible-label: "Starting scene number"; }
+                    }
+                    number-scope := CheckBox { enabled: root.numbering-open && root.numbering-selection-available; text: "Only scenes intersecting selected text"; checked <=> root.numbering-selected-only; }
+                    Text { text: root.numbering-error != "" ? root.numbering-error : (root.numbering-selection-available ? "Leave unchecked to number the entire screenplay." : "Select a passage first to number only those scenes."); color: root.numbering-error != "" ? (root.dark ? #ffb4ab : #a12d24) : root.secondary-ink; wrap: word-wrap; font-size: 12px; }
+                    HorizontalLayout { spacing: 10px;
+                        cancel-numbers := Button { text: "Cancel"; enabled: root.numbering-open; clicked => { root.numbering-action(-1); } }
+                        remove-numbers := Button { text: "Remove Numbers"; enabled: root.numbering-open; clicked => { root.numbering-action(1); } }
+                        add-numbers := Button { text: "Number Scenes"; primary: true; enabled: root.numbering-open; clicked => { root.numbering-action(0); } }
+                    }
+                }
+            }
+        }
+    }
+    shelf-panel := ShelfPanel {
+        quick-text <=> root.shelf-quick-text;
+        quick-visible: root.shelf-quick-visible; quick-pending: root.shelf-quick-pending;
+        quick-edited(value) => { root.shelf-quick-edited(value); }
+        quick-input(value) => { root.shelf-quick-input(value); }
+        quick-selection(value, anchor, focus) => { root.shelf-quick-selection(value, anchor, focus); }
+        quick-boundary => { root.shelf-quick-boundary(); }
+        quick-capture => { root.shelf-quick-capture(); }
+        opened: root.shelf-open; dark: root.dark; editable: root.shelf-editable;
+        kind: root.shelf-kind; draft-kind: root.shelf-draft-kind;
+        replace-selection: root.shelf-replace-selection;
+        can-capture: root.shelf-can-capture;
+        kind-visible: root.shelf-kind-visible;
+        visibility-requested(action) => { root.shelf-visibility-requested(action); }
+        capture(cut) => { root.shelf-capture(cut); }
+        insert(index) => { root.shelf-insert(index); }
+        kind-requested(value) => { root.shelf-kind-requested(value); }
+        query <=> root.shelf-query;
+        query-edited(value) => { root.shelf-query-edited(value); }
+        query-input(value) => { root.shelf-query-input(value); }
+        draft-open: root.shelf-draft-open; draft-existing: root.shelf-draft-existing;
+        draft-task: root.shelf-draft-task; draft-target: root.shelf-draft-target;
+        add-task(index) => { root.shelf-add-task(index); }
+        edit-task(index) => { root.shelf-edit-task(index); }
+        move-task(index, down) => { root.shelf-move-task(index, down); }
+        list-action(index, action) => { root.shelf-list-action(index, action); }
+        draft-task-edit: root.shelf-draft-task-edit;
+        draft-removing <=> root.shelf-draft-removing;
+        draft-removal-preview: root.shelf-draft-removal-preview;
+        draft-task-count: root.shelf-draft-task-count;
+        remove-requested => { root.shelf-remove-requested(); }
+        draft-title <=> root.shelf-draft-title; draft-content <=> root.shelf-draft-content;
+        edit(index) => { root.shelf-edit(index); }
+        draft-action(apply) => { root.shelf-draft-action(apply); }
+        draft-edited(index, value) => { root.shelf-draft-edited(index, value); }
+        draft-input(index, value) => { root.shelf-draft-input(index, value); }
+        draft-boundary => { root.shelf-draft-boundary(); }
+        draft-focused => { root.shelf-draft-focused(); }
+        blocked => { root.shelf-draft-blocked(); }
+        focus-position <=> root.shelf-focus-position;
+        focus-move(backward) => { root.shelf-focus-move(backward); }
+        rows: root.shelf-rows; status: root.shelf-status; error: root.shelf-error;
+        can-undo: root.shelf-can-undo; can-redo: root.shelf-can-redo;
+        toggle(index) => { root.shelf-toggle(index); }
+        history(redo) => { root.shelf-history(redo); }
+        close => { root.shelf-close(); }
+    }
+    title-dialog := TitlePageDialog {
+        visible: root.title-page-open; enabled: root.title-page-open;
+        ready: root.title-page-ready; dark: root.dark; error: root.title-page-error;
+        apply => { root.title-page-action(true); }
+        blocked => { root.title-page-error = "Finish composing text before applying or replacing field text."; }
+        cancel => { root.title-page-action(false); }
+        edited(index, value) => { root.title-page-error = ""; root.title-field-edited(index, value); }
+        field-input(index, text) => { root.title-field-input(index, text); }
+        field-boundary(index) => { root.title-field-boundary(index); }
+    }
+    new-chooser := NewDocumentChooser {
+        show-open-actions: root.new-show-open-actions;
+        visible: root.new-draft-open;
+        enabled: root.new-draft-open;
+        dark: root.dark;
+        create(category) => { root.new-category(category); }
+        cancel => { root.new-category(-1); }
+        open-project => { root.new-category(-2); }
+        open-source => { root.new-category(-3); }
+    }
+    appearance := PopupWindow { width: 240px; height: 150px; x: root.width - 260px; y: 62px;
+        Rectangle { background: root.sidebar; border-width: 1px; border-color: root.separator; border-radius: 8px;
+            VerticalLayout { padding: 20px; spacing: 16px;
+                Text { text: "Appearance"; font-size: 16px; font-weight: 600; color: root.ink; }
+                CheckBox { text: "Dark mode"; checked <=> root.dark; toggled => { root.appearance-changed(); } }
+                CheckBox { text: "White paper"; checked <=> root.white-paper; toggled => { root.appearance-changed(); } }
+            }
+        }
+    }
+    about := PopupWindow { x: (root.width - self.width) / 2; y: (root.height - self.height) / 2; width: 360px; height: 180px; AboutSlint {} }
+}

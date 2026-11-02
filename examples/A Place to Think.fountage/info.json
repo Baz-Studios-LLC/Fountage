@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "type": "public.plain-text",
+  "creatorIdentifier": "com.bazstudios.fountage",
+  "com.bazstudios.fountage": {
+    "version": 2,
+    "projectID": "1a8dc8f6-0160-445f-856a-343473a8fe51",
+    "createdAt": "2026-10-14T04:26:37.198807+00:00",
+    "documentFormat": "academic",
+    "layoutPreset": "academic-draft",
+    "sourceFile": "text.txt",
+    "academicStyle": {
+      "family": "apa",
+      "edition": 7,
+      "variant": "student"
+    }
+  }
+}

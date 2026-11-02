@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>Fountage — 01 Symmetric Nib foreground</title>
+<path id="01-Symmetric-Nib" fill="#FFF7E8" transform="translate(504.204147737 519.795852263) rotate(45) scale(1.05)" d="M -1 416
+C -50 298 -126 163 -210 52
+Q -216 46 -211 40
+C -145 -73 -108 -182 -108 -330
+L 108 -330
+C 108 -182 145 -73 211 40
+Q 216 46 210 52
+C 126 163 50 298 1 416
+L 14 81.912961133
+A 48 48 0 1 0 -14 81.912961133
+L -1 416 Z"/>
+</svg>

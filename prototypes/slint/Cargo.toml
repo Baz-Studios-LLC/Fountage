@@ -1,0 +1,41 @@
+[package]
+name = "fountage-slint-lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+fountage_core = { package = "fountage", path = "../.." }
+slint = { version = "=1.18.1", features = ["unstable-winit-030"] }
+i-slint-core = { version = "=1.18.1", features = ["fountage-ime", "fountage-styled-text"] }
+rfd = "0.15"
+tempfile = "3"
+dirs = "7"
+regex = "1"
+parley = "=0.11.1"
+skrifa = "=0.44.0"
+resvg = "=0.48.1"
+base64 = "=0.23.1"
+unicode-segmentation = "=1.13.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.5"
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSEvent", "NSWindow", "NSView", "NSApplication", "NSMenu", "NSMenuItem", "block2"] }
+block2 = "=0.6.2"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString", "NSNotification", "NSOperation", "block2"] }
+
+[build-dependencies]
+winresource = "=0.1.31"
+slint-build = "=1.18.1"
+
+[dev-dependencies]
+accesskit = "=0.24.1"
+# Backend-level composition events are not exposed by Slint's public test API.
+# Keep this test-only dependency pinned to the toolkit version.
+i-slint-backend-testing = { version = "=1.18.1", features = ["renderer-software"] }
+png = "0.18"
+
+[patch.crates-io]
+i-slint-core = { path = "vendor/i-slint-core" }

@@ -1,0 +1,178 @@
+import { Button, ScrollView } from "std-widgets.slint";
+export component TitleField inherits Rectangle {
+    in property <bool> single-line: false;
+    in property <bool> enabled: true;
+    in property <bool> dark;
+    in property <string> label;
+    in-out property <string> text <=> input.text;
+    out property <bool> has-focus: input.has-focus;
+    out property <bool> composing: input.preedit-text != "";
+    out property <int> selection-anchor: input.anchor-position-byte-offset;
+    out property <int> selection-focus: input.cursor-position-byte-offset;
+    callback selection-changed(string, int, int);
+    function notify-selection() { root.selection-changed(input.text, input.anchor-position-byte-offset, input.cursor-position-byte-offset); }
+    callback edited(string);
+    callback key-pressed(KeyEvent) -> EventResult;
+    forward-focus: input;
+    public function set-selection-offsets(anchor: int, focus: int) { input.set-selection-offsets(anchor, focus); root.notify-selection(); }
+    public function cut() { input.cut(); root.notify-selection(); }
+    public function copy() { input.copy(); }
+    public function paste() { input.paste(); root.notify-selection(); }
+    public function select-all() { input.select-all(); root.notify-selection(); }
+    background: root.dark ? #303030 : white;
+    border-radius: 5px; border-width: 1px; border-color: input.has-focus ? #0a84ff : (root.dark ? #454545 : #d5d5d1);
+    clip: true;
+    view := ScrollView {
+        width: parent.width; height: parent.height;
+        horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+        content-width: self.visible-width;
+        content-height: max(self.visible-height, input.preferred-height + 16px);
+        input := TextInput {
+            enabled: root.enabled; single-line: root.single-line; wrap: word-wrap;
+            x: 8px; y: 8px; width: max(1px, view.visible-width - 16px); height: max(self.preferred-height, view.visible-height - 16px);
+            font-size: 13px; color: root.dark ? #eee9e1 : #252c29;
+            selection-background-color: #0a66c2; selection-foreground-color: white;
+            accessible-label: root.label;
+            edited => { root.edited(self.text); }
+            key-pressed(event) => { root.key-pressed(event) }
+            cursor-position-changed(position) => {
+                root.notify-selection();
+                let top = self.y + position.y;
+                if top + view.content-y < 8px { view.content-y = min(0px, 8px - top); }
+                else if top + 18px + view.content-y > view.visible-height - 8px { view.content-y = max(view.visible-height - view.content-height, min(0px, view.visible-height - 26px - top)); }
+            }
+        }
+    }
+}
+export component TitlePageDialog inherits Rectangle {
+    in property <bool> enabled: false;
+    in property <bool> ready: false;
+    in property <bool> dark;
+    in property <string> error;
+    callback apply(); callback cancel(); callback blocked(); callback edited(int, string);
+    callback field-input(int, string);
+    callback field-boundary(int);
+    in-out property <string> title-value;
+    in-out property <string> credit-value;
+    in-out property <string> author-value;
+    in-out property <string> source-value;
+    in-out property <string> date-value;
+    in-out property <string> contact-value;
+    out property <int> focused-field: title-field.has-focus ? 0 : (credit-field.has-focus ? 1 : (author-field.has-focus ? 2 : (source-field.has-focus ? 3 : (date-field.has-focus ? 4 : (contact-field.has-focus ? 5 : (-1))))));
+    public function select-field(index: int, anchor: int, focus: int) {
+        if index == 0 { title-field.focus(); title-field.set-selection-offsets(anchor, focus); }
+        if index == 1 { credit-field.focus(); credit-field.set-selection-offsets(anchor, focus); }
+        if index == 2 { author-field.focus(); author-field.set-selection-offsets(anchor, focus); }
+        if index == 3 { source-field.focus(); source-field.set-selection-offsets(anchor, focus); }
+        if index == 4 { date-field.focus(); date-field.set-selection-offsets(anchor, focus); }
+        if index == 5 { contact-field.focus(); contact-field.set-selection-offsets(anchor, focus); }
+    }
+    public function clipboard(action: int) {
+        if !root.enabled || !root.ready { return; }
+        if root.composing && action != 1 { root.blocked(); return; }
+        root.field-boundary(root.focused-field);
+        if title-field.has-focus {
+            if action == 0 { title-field.cut(); } else if action == 1 { title-field.copy(); } else if action == 2 { title-field.paste(); } else if action == 3 { title-field.select-all(); }
+        }
+        if credit-field.has-focus {
+            if action == 0 { credit-field.cut(); } else if action == 1 { credit-field.copy(); } else if action == 2 { credit-field.paste(); } else if action == 3 { credit-field.select-all(); }
+        }
+        if author-field.has-focus {
+            if action == 0 { author-field.cut(); } else if action == 1 { author-field.copy(); } else if action == 2 { author-field.paste(); } else if action == 3 { author-field.select-all(); }
+        }
+        if source-field.has-focus {
+            if action == 0 { source-field.cut(); } else if action == 1 { source-field.copy(); } else if action == 2 { source-field.paste(); } else if action == 3 { source-field.select-all(); }
+        }
+        if date-field.has-focus {
+            if action == 0 { date-field.cut(); } else if action == 1 { date-field.copy(); } else if action == 2 { date-field.paste(); } else if action == 3 { date-field.select-all(); }
+        }
+        if contact-field.has-focus {
+            if action == 0 { contact-field.cut(); } else if action == 1 { contact-field.copy(); } else if action == 2 { contact-field.paste(); } else if action == 3 { contact-field.select-all(); }
+        }
+        root.field-boundary(root.focused-field);
+    }
+    out property <bool> composing: title-field.composing || credit-field.composing || author-field.composing || source-field.composing || date-field.composing || contact-field.composing;
+    public function try-apply() { if root.enabled && root.ready { if root.composing { root.blocked(); } else { root.apply(); } } }
+    property <color> ink: root.dark ? #eee9e1 : #252c29;
+    property <color> secondary: root.dark ? #aaa9a5 : #6b6b68;
+    changed enabled => { if root.enabled { if root.ready { title-field.focus(); } else { cancel-button.focus(); } } }
+    background: #00000088;
+    Rectangle {
+        width: 660px; height: min(parent.height - 40px, 600px);
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+        background: root.dark ? #252525 : #f4f4f2;
+        border-radius: 12px; border-width: 1px; border-color: root.dark ? #454545 : #d5d5d1;
+        FocusScope {
+            enabled: root.enabled;
+            capture-key-pressed(event) => {
+                if event.text == Key.Escape { root.cancel(); return accept; }
+                if event.text == Key.Return && (event.modifiers.control || event.modifiers.meta || apply-button.has-focus || cancel-button.has-focus) {
+                    if cancel-button.has-focus { root.cancel(); } else if root.ready { root.try-apply(); }
+                    return accept;
+                }
+                if event.text == Key.Tab || event.text == Key.Backtab {
+                    if !root.ready { cancel-button.focus(); return accept; }
+                    if event.modifiers.shift || event.text == Key.Backtab {
+                        if title-field.has-focus { apply-button.focus(); }
+                        else if credit-field.has-focus { title-field.focus(); }
+                        else if author-field.has-focus { credit-field.focus(); }
+                        else if source-field.has-focus { author-field.focus(); }
+                        else if date-field.has-focus { source-field.focus(); }
+                        else if contact-field.has-focus { date-field.focus(); }
+                        else if cancel-button.has-focus { contact-field.focus(); }
+                        else if apply-button.has-focus { cancel-button.focus(); }
+                        else { title-field.focus(); }
+                    } else {
+                        if title-field.has-focus { credit-field.focus(); }
+                        else if credit-field.has-focus { author-field.focus(); }
+                        else if author-field.has-focus { source-field.focus(); }
+                        else if source-field.has-focus { date-field.focus(); }
+                        else if date-field.has-focus { contact-field.focus(); }
+                        else if contact-field.has-focus { cancel-button.focus(); }
+                        else if cancel-button.has-focus { apply-button.focus(); }
+                        else if apply-button.has-focus { title-field.focus(); }
+                        else { title-field.focus(); }
+                    }
+                    return accept;
+                }
+                return reject;
+            }
+            VerticalLayout { padding: 24px; spacing: 16px;
+                Text { text: "Title Page"; font-family: "Georgia"; font-size: 25px; color: root.ink; }
+                Text { text: "Use consecutive lines for coauthors or contact details."; font-size: 13px; color: root.secondary; wrap: word-wrap; }
+                GridLayout { spacing: 16px;
+                    VerticalLayout { row: 0; col: 0; spacing: 7px;
+                        Text { text: "Title"; font-size: 13px; font-weight: 600; color: root.ink; }
+                        title-field := TitleField { dark: root.dark; enabled: root.enabled && root.ready; text <=> root.title-value; height: 64px; label: "Title page title"; edited(value) => { root.edited(0, value); } key-pressed(event) => { if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { root.field-boundary(0); } else { root.field-input(0, event.text); } return reject; } }
+                    }
+                    VerticalLayout { row: 0; col: 1; spacing: 7px;
+                        Text { text: "Credit"; font-size: 13px; font-weight: 600; color: root.ink; }
+                        credit-field := TitleField { dark: root.dark; enabled: root.enabled && root.ready; text <=> root.credit-value; height: 64px; label: "Title page credit"; edited(value) => { root.edited(1, value); } key-pressed(event) => { if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { root.field-boundary(1); } else { root.field-input(1, event.text); } return reject; } }
+                    }
+                    VerticalLayout { row: 1; col: 0; spacing: 7px;
+                        Text { text: "Author"; font-size: 13px; font-weight: 600; color: root.ink; }
+                        author-field := TitleField { dark: root.dark; enabled: root.enabled && root.ready; text <=> root.author-value; height: 64px; label: "Title page author"; edited(value) => { root.edited(2, value); } key-pressed(event) => { if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { root.field-boundary(2); } else { root.field-input(2, event.text); } return reject; } }
+                    }
+                    VerticalLayout { row: 1; col: 1; spacing: 7px;
+                        Text { text: "Source"; font-size: 13px; font-weight: 600; color: root.ink; }
+                        source-field := TitleField { dark: root.dark; enabled: root.enabled && root.ready; text <=> root.source-value; height: 64px; label: "Title page source"; edited(value) => { root.edited(3, value); } key-pressed(event) => { if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { root.field-boundary(3); } else { root.field-input(3, event.text); } return reject; } }
+                    }
+                    VerticalLayout { row: 2; col: 0; spacing: 7px;
+                        Text { text: "Draft date"; font-size: 13px; font-weight: 600; color: root.ink; }
+                        date-field := TitleField { dark: root.dark; enabled: root.enabled && root.ready; text <=> root.date-value; height: 64px; label: "Title page draft date"; edited(value) => { root.edited(4, value); } key-pressed(event) => { if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { root.field-boundary(4); } else { root.field-input(4, event.text); } return reject; } }
+                    }
+                    VerticalLayout { row: 2; col: 1; spacing: 7px;
+                        Text { text: "Contact"; font-size: 13px; font-weight: 600; color: root.ink; }
+                        contact-field := TitleField { dark: root.dark; enabled: root.enabled && root.ready; text <=> root.contact-value; height: 64px; label: "Title page contact"; edited(value) => { root.edited(5, value); } key-pressed(event) => { if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { root.field-boundary(5); } else { root.field-input(5, event.text); } return reject; } }
+                    }
+                }
+                Text { text: root.error != "" ? root.error : "Additional title fields and the screenplay body are preserved."; wrap: word-wrap; font-size: 12px; color: root.error != "" ? (root.dark ? #ffb4ab : #a12d24) : root.secondary; }
+                HorizontalLayout { spacing: 10px;
+                    Text { text: "Return adds a line · Command/Ctrl-Return applies"; color: root.secondary; font-size: 11px; horizontal-stretch: 1; wrap: word-wrap; }
+                    cancel-button := Button { enabled: root.enabled; text: "Cancel"; clicked => { root.cancel(); } }
+                    apply-button := Button { enabled: root.enabled && root.ready; text: "Apply"; primary: true; clicked => { root.try-apply(); } }
+                }
+            }
+        }
+    }
+}

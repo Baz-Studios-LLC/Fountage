@@ -1,0 +1,318 @@
+import { QuickNoteEntry } from "quick-note-entry.slint";
+import { TitleField } from "title-page-dialog.slint";
+import { ShelfEditor } from "shelf-editor.slint";
+import { Button, CheckBox, ScrollView } from "std-widgets.slint";
+component ShelfTask inherits Rectangle {
+    in property <bool> focus-requested;
+    in property <bool> editable;
+    in property <string> text;
+    in-out property <bool> completed;
+    callback toggle();
+    callback reveal();
+    height: max(32px, choice.preferred-height);
+    forward-focus: choice;
+    changed focus-requested => { if root.focus-requested { root.reveal(); choice.focus(); } }
+    choice := CheckBox { x: 0px; y: (parent.height - self.height) / 2; height: self.preferred-height; width: parent.width; text: root.text; checked <=> root.completed; enabled: root.editable; accessible-label: root.text; toggled => { root.toggle(); } }
+}
+export struct ShelfRow { item-id: string, title: string, text: string, completed: bool, task: bool, can-move-up: bool, can-move-down: bool, pinned: bool, group-label: string, can-insert: bool }
+export component ShelfPanel inherits Rectangle {
+    in property <bool> opened: false;
+    in property <bool> dark;
+    in property <bool> editable;
+    in property <int> kind: 0;
+    in property <int> draft-kind: 0;
+    property <string> singular: root.kind == 1 ? "note" : root.kind == 2 ? "snippet" : "checklist";
+    property <string> capital: root.kind == 1 ? "Note" : root.kind == 2 ? "Snippet" : "Checklist";
+    callback kind-requested(int);
+    in property <[ShelfRow]> rows;
+    in property <string> status;
+    in-out property <string> query;
+    out property <bool> query-focused: root.opened && !root.draft-open && search.has-focus;
+    out property <bool> query-composing: search.composing;
+    callback query-edited(string);
+    callback query-input(string);
+    public function focus-search() { search.focus(); root.focus-position = -5; }
+    public function select-search(anchor: int, focus: int) { search.focus(); search.set-selection-offsets(anchor, focus); }
+    public function query-clipboard(kind: int) {
+        if !root.query-focused { return; }
+        if root.query-composing && kind != 1 { root.blocked(); return; }
+        root.query-input("");
+        if kind == 0 { search.cut(); } else if kind == 1 { search.copy(); } else if kind == 2 { search.paste(); } else if kind == 3 { search.select-all(); }
+    }
+    in-out property <string> quick-text;
+    in property <bool> quick-visible: true;
+    in property <bool> quick-pending;
+    out property <bool> quick-focused: root.opened && !root.draft-open && quick.focused;
+    out property <bool> quick-composing: quick.composing;
+    out property <int> quick-anchor: quick.selection-anchor;
+    out property <int> quick-focus: quick.selection-focus;
+    callback quick-input(string);
+    callback quick-selection(string, int, int);
+    callback quick-boundary();
+    public function select-quick(anchor: int, focus: int) { root.focus-position = -15; body.content-y = 0px; quick.select(anchor, focus); }
+    callback quick-edited(string);
+    callback quick-capture();
+    function reveal-record(top: length, height: length) {
+        if top + body.content-y < 0px { body.content-y = -top; }
+        else if top + min(height, body.visible-height) + body.content-y > body.visible-height {
+            body.content-y = min(0px, body.visible-height - top - min(height, body.visible-height));
+        }
+    }
+    public function focus-quick() { root.focus-position = -15; body.content-y = 0px; quick.focus-entry(); }
+    public function quick-clipboard(kind: int) { quick.clipboard(kind); }
+    in property <string> error;
+    in property <bool> can-undo;
+    in property <bool> can-redo;
+    in-out property <int> focus-position: -1;
+    callback focus-move(bool);
+    callback edit(int);
+    callback insert(int);
+    callback capture(bool);
+    callback visibility-requested(int);
+    in property <bool> kind-visible: true;
+    in property <bool> can-capture;
+    in property <bool> replace-selection;
+    callback add-task(int);
+    callback edit-task(int);
+    callback move-task(int, bool);
+    callback list-action(int, int);
+    in property <bool> draft-task-edit;
+    in property <string> draft-removal-preview;
+    in property <int> draft-task-count;
+    in-out property <bool> draft-removing;
+    callback remove-requested();
+    in property <bool> draft-task;
+    in property <string> draft-target;
+    in property <bool> draft-open;
+    in property <bool> draft-existing;
+    in-out property <string> draft-title;
+    in-out property <string> draft-content;
+    out property <int> draft-control-index: draft.control-index;
+    public function focus-draft-control(index: int) { draft.focus-control(index); }
+    public function draft-field-clipboard(index: int, kind: int) { draft.clipboard-field(index, kind); }
+    out property <int> draft-field-index: draft.field-index;
+    out property <bool> draft-composing: draft.composing;
+    callback draft-action(bool);
+    callback draft-edited(int, string);
+    callback draft-input(int, string);
+    callback draft-boundary();
+    callback draft-focused();
+    callback blocked();
+    public function focus-draft() { draft.focus-title(); }
+    public function move-draft-focus(backward: bool) { draft.move-focus(backward); }
+    public function select-draft-field(index: int, anchor: int, focus: int) { draft.select-field(index, anchor, focus); }
+    public function draft-clipboard(kind: int) { draft.clipboard(kind); }
+    callback toggle(int);
+    callback history(bool);
+    callback close();
+    public function focus-after-draft(position: int) { root.focus-position = position; if position == -4 { new-list.focus(); } }
+    public function focus-default() { root.focus-position = -1; done.focus(); }
+    changed focus-position => {
+        if root.opened && !root.draft-open {
+            if root.focus-position == -15 { body.content-y = 0px; quick.focus-entry(); }
+            else if root.focus-position == -16 { body.content-y = min(0px, body.visible-height - 128px); quick.focus-add(); }
+            else if root.focus-position == -17 { quick-toggle.focus(); }
+            else if root.focus-position == -12 { visible-kind.focus(); }
+            else if root.focus-position == -13 { show-all.focus(); }
+            else if root.focus-position == -14 { hide-all.focus(); }
+            else if root.focus-position == -7 { show-checklists.focus(); }
+            else if root.focus-position == -8 { show-notes.focus(); }
+            else if root.focus-position == -9 { show-snippets.focus(); }
+            else if root.focus-position == -6 { clear-search.focus(); }
+            else if root.focus-position == -5 { search.focus(); }
+            else if root.focus-position == -1 { done.focus(); }
+            else if root.focus-position == -2 { undo.focus(); }
+            else if root.focus-position == -3 { redo.focus(); }
+            else if root.focus-position == -4 { new-list.focus(); }
+        }
+    }
+    visible: root.opened;
+    background: #00000088;
+    property <color> ink: root.dark ? #eeeeee : #292929;
+    property <color> secondary: root.dark ? #aaaaaa : #6b6b68;
+    Rectangle {
+        visible: !root.draft-open;
+        width: min(parent.width - 80px, 620px); height: min(parent.height - 80px, 760px);
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+        background: root.dark ? #262626 : #f4f4f2; border-radius: 12px;
+        border-width: 1px; border-color: root.dark ? #484848 : #d5d5d1;
+        FocusScope {
+            enabled: root.opened && !root.draft-open;
+            capture-key-pressed(event) => {
+                if root.quick-focused && event.text == Key.Return && (event.modifiers.control || event.modifiers.meta) && !event.modifiers.alt {
+                    if root.quick-composing { root.blocked(); } else { root.quick-capture(); }
+                    return accept;
+                }
+                if event.text == Key.Tab { root.focus-move(event.modifiers.shift); return accept; }
+                if event.text == Key.Escape { if root.query-composing || root.quick-composing { return reject; } if root.query != "" { root.query-input(""); root.query = ""; root.query-edited(""); root.focus-search(); } else { root.close(); } return accept; }
+                if (event.modifiers.control || event.modifiers.meta) && !event.modifiers.alt {
+                    if event.text == "z" || event.text == "Z" { root.history(event.modifiers.shift); return accept; }
+                    if event.text == "y" || event.text == "Y" { root.history(true); return accept; }
+                }
+                return reject;
+            }
+            VerticalLayout { padding: 24px; spacing: 12px;
+                HorizontalLayout {
+                    Text { text: "Shelf"; font-family: "Georgia"; font-size: 28px; color: root.ink; horizontal-stretch: 1; }
+                    quick-toggle := Button { text: root.quick-visible ? "Hide Quick Note" : "Show Quick Note"; enabled: root.opened && root.editable && !root.draft-open; clicked => { root.visibility-requested(3); } }
+                }
+                HorizontalLayout { spacing: 8px;
+                    show-checklists := Button { text: "Checklists"; primary: root.kind == 0; accessible-label: "Shelf Checklists"; enabled: root.opened && !root.draft-open; clicked => { root.kind-requested(0); } }
+                    show-notes := Button { text: "Notes"; primary: root.kind == 1; accessible-label: "Shelf Notes"; enabled: root.opened && !root.draft-open; clicked => { root.kind-requested(1); } }
+                    show-snippets := Button { text: "Snippets"; primary: root.kind == 2; accessible-label: "Shelf Snippets"; enabled: root.opened && !root.draft-open; clicked => { root.kind-requested(2); } }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                }
+                HorizontalLayout {
+                    Text { text: "Project " + root.singular + "s"; font-size: 15px; font-weight: 600; color: root.ink; vertical-alignment: center; horizontal-stretch: 1; }
+                    new-list := Button { text: "New " + root.capital + "…"; enabled: root.opened && root.editable && !root.draft-open; clicked => { root.focus-position = -4; root.edit(-1); } }
+                }
+                if root.can-capture: HorizontalLayout { spacing: 8px;
+                    copy-selection := Button { text: "Copy Selection to Shelf"; enabled: root.opened && !root.draft-open; property <bool> requested: self.enabled && root.focus-position == -10; init => { if self.requested { self.focus(); } } changed requested => { if self.requested { self.focus(); } } clicked => { root.capture(false); } }
+                    cut-selection := Button { text: "Cut Selection to Shelf"; enabled: root.opened && !root.draft-open; property <bool> requested: self.enabled && root.focus-position == -11; init => { if self.requested { self.focus(); } } changed requested => { if self.requested { self.focus(); } } clicked => { root.capture(true); } }
+                    Rectangle { background: transparent; horizontal-stretch: 1; }
+                }
+                HorizontalLayout { spacing: 8px;
+                    visible-kind := Button { text: (root.kind-visible ? "Hide " : "Show ") + root.capital + "s"; accessible-label: (root.kind-visible ? "Hide Shelf " : "Show Shelf ") + root.singular + "s"; enabled: root.opened && root.editable && !root.draft-open; clicked => { root.visibility-requested(0); } }
+                    Rectangle { background: transparent; horizontal-stretch: 1; }
+                    show-all := Button { text: "Show All"; accessible-label: "Show all Shelf types"; enabled: root.opened && root.editable && !root.draft-open; clicked => { root.visibility-requested(1); } }
+                    hide-all := Button { text: "Hide All"; accessible-label: "Hide all Shelf types"; enabled: root.opened && root.editable && !root.draft-open; clicked => { root.visibility-requested(2); } }
+                }
+                Text { text: "Kept with this project, separate from your manuscript."; color: root.secondary; font-size: 12px; wrap: word-wrap; }
+                HorizontalLayout { spacing: 8px;
+                    Text { text: "Search"; font-size: 13px; color: root.secondary; vertical-alignment: center; }
+                    search := TitleField { height: 34px; horizontal-stretch: 1; dark: root.dark; single-line: true; label: "Search Shelf " + root.singular + "s"; enabled: root.opened && !root.draft-open; text <=> root.query;
+                        edited(value) => { root.query-edited(value); }
+                        key-pressed(event) => { root.query-input(event.text); return reject; }
+                    }
+                    clear-search := Button { text: "Clear"; accessible-label: "Clear Shelf search"; enabled: root.query != "" && !root.query-composing; clicked => { root.query-input(""); root.query = ""; root.query-edited(""); root.focus-search(); } }
+                }
+                Text { text: root.status; font-size: 12px; color: root.secondary; wrap: word-wrap; }
+                if root.error != "": Text { text: root.error; font-size: 12px; color: root.ink; wrap: word-wrap; }
+                body := ScrollView {
+                    vertical-stretch: 1; min-height: 80px;
+                    horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+                    VerticalLayout { spacing: 10px; alignment: start;
+                        quick := QuickNoteEntry {
+                            shown: root.quick-visible; enabled: root.opened && root.editable && !root.draft-open;
+                            dark: root.dark; pending: root.quick-pending; text <=> root.quick-text;
+                            edited(value) => { root.quick-edited(value); }
+                            input(value) => { root.quick-input(value); }
+                            selection(value, anchor, focus) => { root.quick-selection(value, anchor, focus); }
+                            boundary => { root.quick-boundary(); }
+                            capture => { root.quick-capture(); }
+                            blocked => { root.blocked(); }
+                        }
+                        for row[index] in root.rows: record := VerticalLayout { spacing: 6px; vertical-stretch: 0; alignment: start;
+                            if row.group-label != "": Text { text: row.group-label; font-size: 11px; font-weight: 600; letter-spacing: 1px; color: root.secondary; }
+                            if row.title != "": HorizontalLayout { spacing: 6px;
+                                Text { text: row.title; font-size: 17px; font-weight: 600; color: root.ink; wrap: word-wrap; horizontal-stretch: 1; }
+                                pin := Button {
+                                    text: row.pinned ? "Unpin" : "Pin"; accessible-label: (row.pinned ? "Unpin " + root.singular + " " : "Pin " + root.singular + " ") + row.title;
+                                    enabled: root.opened && root.editable && !root.draft-open;
+                                    property <bool> requested: self.enabled && root.focus-position == 5 * root.rows.length + index;
+                                    init => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    changed requested => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    clicked => { root.focus-position = 5 * root.rows.length + index; root.list-action(index, 0); }
+                                }
+                                list-up := Button {
+                                    text: "↑"; width: 28px; accessible-label: "Move " + root.singular + " up " + row.title;
+                                    enabled: root.opened && root.editable && !root.draft-open && row.can-move-up;
+                                    property <bool> requested: self.enabled && root.focus-position == 6 * root.rows.length + index;
+                                    init => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    changed requested => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    clicked => { root.focus-position = 6 * root.rows.length + index; root.list-action(index, 1); }
+                                }
+                                list-down := Button {
+                                    text: "↓"; width: 28px; accessible-label: "Move " + root.singular + " down " + row.title;
+                                    enabled: root.opened && root.editable && !root.draft-open && row.can-move-down;
+                                    property <bool> requested: self.enabled && root.focus-position == 7 * root.rows.length + index;
+                                    init => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    changed requested => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    clicked => { root.focus-position = 7 * root.rows.length + index; root.list-action(index, 2); }
+                                }
+                                header-edit := Button {
+                                    text: "Edit…"; accessible-label: "Edit " + root.singular + " " + row.title;
+                                    enabled: root.opened && root.editable && !root.draft-open;
+                                    property <bool> requested: root.opened && !root.draft-open && root.focus-position == index;
+                                    init => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    changed requested => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    clicked => { root.focus-position = index; root.edit(index); }
+                                }
+                                insert-item := Button {
+                                    text: root.replace-selection ? "Replace Selection" : "Insert";
+                                    accessible-label: (root.replace-selection ? "Replace manuscript selection with " : "Insert into manuscript from ") + row.title;
+                                    enabled: root.opened && root.editable && !root.draft-open && row.can-insert;
+                                    property <bool> requested: self.enabled && root.focus-position == 8 * root.rows.length + index;
+                                    init => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    changed requested => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    clicked => { root.focus-position = 8 * root.rows.length + index; root.insert(index); }
+                                }
+                                if root.kind == 0: task-add := Button {
+                                    text: "Add Task…"; accessible-label: "Add task to " + row.title;
+                                    enabled: root.opened && root.editable && !root.draft-open;
+                                    property <bool> requested: root.opened && !root.draft-open && root.focus-position == root.rows.length + index;
+                                    init => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    changed requested => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                    clicked => { root.focus-position = root.rows.length + index; root.add-task(index); }
+                                }
+                            }
+                            if row.task: HorizontalLayout { spacing: 6px;
+                            ShelfTask { horizontal-stretch: 1; text: row.text; completed <=> row.completed; editable: root.opened && root.editable; focus-requested: root.opened && root.focus-position == index; reveal => { root.reveal-record(record.y, record.height); } toggle => { root.focus-position = index; root.toggle(index); } }
+                            move-up := Button {
+                                text: "↑"; width: 28px; accessible-label: "Move task up " + row.text;
+                                enabled: root.opened && root.editable && !root.draft-open && row.can-move-up;
+                                property <bool> requested: self.enabled && root.focus-position == 3 * root.rows.length + index;
+                                init => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                changed requested => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                clicked => { root.focus-position = 3 * root.rows.length + index; root.move-task(index, false); }
+                            }
+                            move-down := Button {
+                                text: "↓"; width: 28px; accessible-label: "Move task down " + row.text;
+                                enabled: root.opened && root.editable && !root.draft-open && row.can-move-down;
+                                property <bool> requested: self.enabled && root.focus-position == 4 * root.rows.length + index;
+                                init => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                changed requested => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                clicked => { root.focus-position = 4 * root.rows.length + index; root.move-task(index, true); }
+                            }
+                            task-edit := Button {
+                                text: "Edit…"; accessible-label: "Edit task " + row.text;
+                                enabled: root.opened && root.editable && !root.draft-open;
+                                property <bool> requested: root.opened && !root.draft-open && root.focus-position == 2 * root.rows.length + index;
+                                init => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                changed requested => { if self.requested { root.reveal-record(record.y, record.height); self.focus(); } }
+                                clicked => { root.focus-position = 2 * root.rows.length + index; root.edit-task(index); }
+                            }
+                            }
+                            if !row.task && row.text != "": Text { text: row.text; color: root.secondary; font-size: 12px; wrap: word-wrap; }
+                        }
+                        if root.rows.length == 0 && root.error == "": Text { text: !root.kind-visible ? "These " + root.singular + "s are hidden, not deleted. Turn on Show " + root.singular + "s or choose Show All to see them again." : root.query != "" ? "No matching " + root.singular + "s. Search titles or text." : "This project has no Shelf " + root.singular + "s yet."; color: root.secondary; font-size: 14px; wrap: word-wrap; }
+                    }
+                }
+                Rectangle { height: 1px; background: root.dark ? #484848 : #d5d5d1; }
+                HorizontalLayout { spacing: 10px;
+                    undo := Button { text: "Undo Shelf Change"; enabled: root.opened && root.can-undo; clicked => { root.focus-position = -2; root.history(false); } }
+                    redo := Button { text: "Redo Shelf Change"; enabled: root.opened && root.can-redo; clicked => { root.focus-position = -3; root.history(true); } }
+                    Rectangle { background: transparent; horizontal-stretch: 1; }
+                    done := Button { text: "Done"; enabled: root.opened; clicked => { root.focus-position = -1; root.close(); } }
+                }
+            }
+        }
+    }
+    draft := ShelfEditor {
+        width: min(parent.width - 80px, 620px); height: min(parent.height - 80px, root.draft-removing ? (root.draft-task ? (root.error == "" ? 380px : 420px) : (root.error == "" ? 360px : 400px)) : root.draft-task ? (root.error == "" ? 310px : 360px) : 620px);
+        kind: root.draft-kind;
+        task-mode: root.draft-task; task-edit: root.draft-task-edit; removing <=> root.draft-removing; removal-preview: root.draft-removal-preview; task-count: root.draft-task-count;
+        remove-requested => { root.remove-requested(); } target-title: root.draft-target;
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+        opened: root.opened && root.draft-open; dark: root.dark; existing: root.draft-existing;
+        title <=> root.draft-title; content <=> root.draft-content; error: root.error;
+        action(apply) => { root.draft-action(apply); }
+        edited(index, value) => { root.draft-edited(index, value); }
+        input(index, value) => { root.draft-input(index, value); }
+        boundary => { root.draft-boundary(); }
+        focused => { root.draft-focused(); }
+        blocked => { root.blocked(); }
+        history(redo) => { root.history(redo); }
+    }
+
+}

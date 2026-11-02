@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "type": "com.fountain.screenplay",
+  "creatorIdentifier": "com.bazstudios.fountage",
+  "com.bazstudios.fountage": {
+    "version": 1,
+    "projectID": "3281aed8-c767-47e1-9a74-1b9cdf0f8aa8",
+    "createdAt": "2026-10-14T04:11:48.662266+00:00",
+    "authors": [
+      "Baz Studios"
+    ],
+    "settings": {},
+    "characters": {},
+    "notes": [],
+    "revisions": [],
+    "snippets": [],
+    "goals": {}
+  }
+}

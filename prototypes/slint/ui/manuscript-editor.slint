@@ -1,0 +1,149 @@
+import { FormattedSurface } from "formatted-surface.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// Public TextInput/ScrollView APIs keep editing in Slint's input-method and
+// accessibility backend while the manuscript owns its paper and ink colors.
+export component ManuscriptEditor inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <bool> formatted: false;
+    in property <image> formatted-frame;
+    in property <bool> formatted-ready: false;
+    in property <bool> formatted-dark;
+    callback formatted-refresh(float, float);
+    callback formatted-point(float, float, bool);
+    callback formatted-scroll(float);
+    callback formatted-key(KeyEvent) -> bool;
+    callback formatted-select(int, int);
+    callback formatted-restore-selection(int, int, bool, bool);
+    callback formatted-all();
+    callback formatted-cancel();
+    callback formatted-finish();
+    out property <bool> formatted-has-focus: root.formatted && surface.has-focus;
+    out property <float> surface-x: surface.absolute-position.x / 1px;
+    out property <float> surface-y: surface.absolute-position.y / 1px;
+    in property <bool> formatted-has-selection;
+    callback formatted-selection() -> string;
+    callback formatted-insert(string);
+    changed formatted => { if root.formatted { root.formatted-refresh(root.width / 1px, root.height / 1px); surface.focus(); } else { root.formatted-finish(); input.focus(); } }
+    changed text => { if root.formatted { root.formatted-refresh(root.width / 1px, root.height / 1px); } }
+    changed formatted-dark => { if root.formatted { root.formatted-refresh(root.width / 1px, root.height / 1px); } }
+    public function focus-editor() { if root.formatted { surface.focus(); } else { root.formatted-finish(); input.focus(); } }
+    public function mirror-selection(anchor: int, focus: int) { input.set-selection-offsets(anchor, focus); }
+    in property <bool> enabled: true;
+    in property <string> font-family: "Courier";
+    in property <length> font-size: 16px;
+    in property <color> ink: #242922;
+    in property <color> paper: #fffdf7;
+    in property <color> frame: #cbd3c7;
+    in property <bool> can-undo;
+    in property <bool> can-redo;
+    out property <bool> composing: input.preedit-text != "";
+    out property <bool> has-focus: root.formatted ? surface.has-focus : input.has-focus;
+    callback edited(string, int, int);
+    callback selection-changed(string, int, int);
+    // Version-pinned Slint 1.18.1 byte-offset introspection; review on toolkit upgrades.
+    out property <int> selection-anchor: input.anchor-position-byte-offset;
+    out property <int> selection-focus: input.cursor-position-byte-offset;
+    callback key-pressed(event: KeyEvent) -> EventResult;
+    callback history-action(bool);
+    callback boundary();
+    forward-focus: input;
+    min-width: 0px; min-height: 64px; vertical-stretch: 1;
+    background: root.paper;
+    border-radius: 5px; border-width: 1px;
+    border-color: root.has-focus ? #0a84ff : root.frame;
+    clip: true;
+
+    public function set-selection-offsets(anchor: int, focus: int) {
+        root.boundary();
+        if root.formatted { root.formatted-select(anchor, focus); }
+        input.set-selection-offsets(anchor, focus);
+        if !root.formatted { root.selection-changed(input.text, input.anchor-position-byte-offset, input.cursor-position-byte-offset); }
+    }
+    public function set-visual-selection(anchor: int, focus: int, anchor-upstream: bool, focus-upstream: bool) {
+        if root.formatted { root.formatted-restore-selection(anchor, focus, anchor-upstream, focus-upstream); input.set-selection-offsets(anchor, focus); }
+        else { root.set-selection-offsets(anchor, focus); }
+    }
+    // Clipboard transport is deliberately separate from the bound draft.
+    // Only the formatted controller performs source replacements and moves its caret.
+    public function copy-formatted(cut: bool) {
+        let selected = root.formatted-selection();
+        if selected != "" {
+            clipboard-host.text = selected;
+            clipboard-host.select-all(); clipboard-host.copy();
+            if cut { root.formatted-insert(""); }
+        }
+    }
+    public function cut() { root.boundary(); if root.formatted { root.copy-formatted(true); } else { input.cut(); } root.boundary(); }
+    public function copy() { root.boundary(); if root.formatted { root.copy-formatted(false); } else { input.copy(); } }
+    public function paste() {
+        root.boundary();
+        if root.formatted {
+            clipboard-host.text = "";
+            clipboard-host.paste();
+            if clipboard-host.text != "" { root.formatted-insert(clipboard-host.text); }
+        } else { input.paste(); }
+        root.boundary();
+    }
+    clipboard-host := TextInput { visible: false; enabled: root.enabled; single-line: false; }
+    public function select-all() { root.boundary(); if root.formatted { root.formatted-all(); } else { input.select-all(); } }
+
+    context := ContextMenuArea {
+        enabled: root.enabled;
+        Menu {
+            MenuItem { title: "Undo"; enabled: root.enabled && root.can-undo; activated => { root.history-action(false); } }
+            MenuItem { title: "Redo"; enabled: root.enabled && root.can-redo; activated => { root.history-action(true); } }
+            MenuSeparator {}
+            MenuItem { title: "Cut"; enabled: root.enabled && (!root.formatted || root.formatted-has-selection); activated => { root.cut(); } }
+            MenuItem { title: "Copy"; enabled: root.enabled && (root.formatted ? root.formatted-has-selection : root.text != ""); activated => { root.copy(); } }
+            MenuItem { title: "Paste"; enabled: root.enabled; activated => { root.paste(); } }
+            MenuItem { title: "Select All"; enabled: root.enabled && root.text != ""; activated => { root.select-all(); } }
+        }
+        view := ScrollView {
+            visible: !root.formatted;
+            enabled: root.enabled;
+            width: parent.width; height: parent.height;
+            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+            content-width: self.visible-width;
+            content-height: max(self.visible-height, input.preferred-height + 32px);
+            input := TextInput {
+                x: 16px; y: 16px;
+                width: max(1px, view.visible-width - 32px);
+                height: max(self.preferred-height, view.visible-height - 32px);
+                enabled: root.enabled;
+                single-line: false; wrap: word-wrap;
+                font-family: root.font-family; font-size: root.font-size;
+                color: root.ink;
+                selection-background-color: #0a66c2;
+                selection-foreground-color: white;
+                page-height: view.visible-height;
+                accessible-label: "Manuscript source";
+                edited => { root.edited(self.text, self.anchor-position-byte-offset, self.cursor-position-byte-offset); }
+                key-pressed(event) => { root.key-pressed(event) }
+                cursor-position-changed(position) => {
+                    if !root.formatted { root.selection-changed(self.text, self.anchor-position-byte-offset, self.cursor-position-byte-offset); }
+                    let top = self.y + position.y;
+                    let bottom = top + root.font-size * 1.5;
+                    if top + view.content-y < 16px {
+                        view.content-y = max(view.visible-height - view.content-height, min(0px, 16px - top));
+                    } else if bottom + view.content-y > view.visible-height - 16px {
+                        view.content-y = max(view.visible-height - view.content-height, min(0px, view.visible-height - 16px - bottom));
+                    }
+                }
+            }
+        }
+    surface := FormattedSurface {
+        visible: root.formatted;
+        enabled: root.enabled && root.formatted && root.formatted-ready;
+        width: parent.width; height: parent.height;
+        frame: root.formatted-frame;
+        resized(w, h) => { if root.formatted { root.formatted-refresh(w, h); } }
+        point(x, y, extend) => { root.formatted-point(x, y, extend); }
+        scrolled(delta) => { root.formatted-scroll(delta); }
+        input-key(event) => { root.formatted-key(event) }
+        cancelled => { root.formatted-finish(); }
+        context-requested(x, y) => { context.show({x: x, y: y}); }
+    }
+
+    }
+}

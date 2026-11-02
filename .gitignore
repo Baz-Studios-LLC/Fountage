@@ -1,0 +1,13 @@
+/target
+.DS_Store
+/macOS/.build
+/macOS/.swiftpm
+
+/prototypes/slint/target
+
+/output/
+/dist/
+/prototypes/slint/output/
+
+__pycache__/
+*.pyc

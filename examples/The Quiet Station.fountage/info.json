@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "type": "public.plain-text",
+  "creatorIdentifier": "com.bazstudios.fountage",
+  "com.bazstudios.fountage": {
+    "version": 2,
+    "projectID": "13afd6d4-1d1d-4ea2-a6a9-7f3d021d0282",
+    "createdAt": "2026-10-14T04:26:37.198601+00:00",
+    "documentFormat": "novel",
+    "layoutPreset": "novel-manuscript",
+    "sourceFile": "text.txt"
+  }
+}

@@ -1,0 +1,4 @@
+module FountageCore {
+    header "include/fountage.h"
+    export *
+}

@@ -1,0 +1,140 @@
+import { Button } from "std-widgets.slint";
+import { TitleField } from "title-page-dialog.slint";
+export component ShelfEditor inherits Rectangle {
+    in property <bool> opened;
+    in property <bool> dark;
+    in property <bool> existing;
+    in property <int> kind: 0;
+    property <string> singular: root.kind == 1 ? "note" : root.kind == 2 ? "snippet" : "checklist";
+    property <string> capital: root.kind == 1 ? "Note" : root.kind == 2 ? "Snippet" : "Checklist";
+    in property <bool> task-mode;
+    in property <bool> task-edit;
+    in property <bool> removing;
+    in property <string> removal-preview;
+    in property <int> task-count;
+    property <bool> can-remove: root.task-edit || (!root.task-mode && root.existing);
+    callback remove-requested();
+    in property <string> target-title;
+    in property <string> error;
+    in-out property <string> title;
+    in-out property <string> content;
+    out property <int> control-index: title-field.has-focus ? 0 : (!root.task-mode && content-field.has-focus) ? 1 : cancel.has-focus ? 2 : save.has-focus ? 3 : remove.has-focus ? 4 : -1;
+    out property <int> field-index: title-field.has-focus ? 0 : (!root.task-mode && content-field.has-focus) ? 1 : -1;
+    out property <bool> composing: title-field.composing || (!root.task-mode && content-field.composing);
+    callback edited(int, string);
+    callback input(int, string);
+    callback boundary();
+    callback action(bool);
+    callback history(bool);
+    callback blocked();
+    callback focused();
+    changed field-index => { root.focused(); }
+    public function focus-title() { title-field.focus(); title-field.select-all(); }
+    public function select-field(index: int, anchor: int, focus: int) {
+        if index == 0 { title-field.focus(); title-field.set-selection-offsets(anchor, focus); }
+        if index == 1 && !root.task-mode { content-field.focus(); content-field.set-selection-offsets(anchor, focus); }
+    }
+    public function focus-control(index: int) {
+        if !root.opened { return; }
+        if index == 0 && !root.removing { title-field.focus(); }
+        else if index == 1 && !root.task-mode && !root.removing { content-field.focus(); }
+        else if index == 2 { cancel.focus(); }
+        else if index == 3 { save.focus(); }
+        else if index == 4 && root.can-remove && !root.removing { remove.focus(); }
+    }
+    public function clipboard-field(index: int, kind: int) {
+        if !root.opened { return; }
+        if root.removing { return; }
+        if root.composing && kind != 1 { root.blocked(); return; }
+        root.boundary();
+        if index == 0 {
+            if kind == 0 { title-field.cut(); } else if kind == 1 { title-field.copy(); } else if kind == 2 { title-field.paste(); } else if kind == 3 { title-field.select-all(); }
+        }
+        if index == 1 && !root.task-mode {
+            if kind == 0 { content-field.cut(); } else if kind == 1 { content-field.copy(); } else if kind == 2 { content-field.paste(); } else if kind == 3 { content-field.select-all(); }
+        }
+        root.boundary();
+    }
+    public function move-focus(backward: bool) {
+        if !root.opened { return; }
+        if root.composing { root.blocked(); return; }
+        root.boundary();
+        if root.removing { if cancel.has-focus { save.focus(); } else { cancel.focus(); } return; }
+        if backward {
+            if title-field.has-focus { save.focus(); }
+            else if content-field.has-focus { title-field.focus(); }
+            else if cancel.has-focus { if root.can-remove { remove.focus(); } else if root.task-mode { title-field.focus(); } else { content-field.focus(); } }
+            else if remove.has-focus { if root.task-mode { title-field.focus(); } else { content-field.focus(); } }
+            else { cancel.focus(); }
+        } else {
+            if title-field.has-focus { if root.task-edit { remove.focus(); } else if root.task-mode { cancel.focus(); } else { content-field.focus(); } }
+            else if content-field.has-focus { if root.can-remove { remove.focus(); } else { cancel.focus(); } }
+            else if remove.has-focus { cancel.focus(); }
+            else if cancel.has-focus { save.focus(); }
+            else { title-field.focus(); }
+        }
+    }
+    public function clipboard(kind: int) {
+        if !root.opened { return; }
+        if root.removing { return; }
+        if root.composing && kind != 1 { root.blocked(); return; }
+        root.boundary();
+        if title-field.has-focus {
+            if kind == 0 { title-field.cut(); } else if kind == 1 { title-field.copy(); } else if kind == 2 { title-field.paste(); } else { title-field.select-all(); }
+        }
+        if content-field.has-focus {
+            if kind == 0 { content-field.cut(); } else if kind == 1 { content-field.copy(); } else if kind == 2 { content-field.paste(); } else { content-field.select-all(); }
+        }
+        root.boundary();
+    }
+    visible: root.opened;
+    background: root.dark ? #262626 : #f4f4f2;
+    border-radius: 12px; border-width: 1px; border-color: root.dark ? #484848 : #d5d5d1;
+    property <color> ink: root.dark ? #eeeeee : #292929;
+    property <color> secondary: root.dark ? #aaaaaa : #6b6b68;
+    FocusScope {
+        enabled: root.opened;
+        capture-key-pressed(event) => {
+            if event.text == Key.Tab || event.text == Key.Backtab { root.move-focus(event.modifiers.shift || event.text == Key.Backtab); return accept; }
+            if event.text == Key.Escape { if root.composing { root.blocked(); } else { root.action(false); } return accept; }
+            if event.text == Key.Return && remove.has-focus { root.remove-requested(); return accept; }
+            if event.text == Key.Return && (event.modifiers.control || event.modifiers.meta || (root.task-mode && title-field.has-focus) || save.has-focus || cancel.has-focus) {
+                if root.composing { root.blocked(); } else { root.action(!cancel.has-focus); }
+                return accept;
+            }
+            if (event.modifiers.control || event.modifiers.meta) && !event.modifiers.alt {
+                if event.text == "z" || event.text == "Z" { root.history(event.modifiers.shift); return accept; }
+                if event.text == "y" || event.text == "Y" { root.history(true); return accept; }
+            }
+            return reject;
+        }
+        VerticalLayout { padding: 24px; spacing: 14px; alignment: start;
+            Text { text: root.removing ? (root.task-mode ? "Remove task?" : "Delete " + root.singular + "?") : root.task-mode ? (root.task-edit ? "Edit task" : "Add task") : (root.existing ? "Edit " + root.singular : "New " + root.singular); font-family: "Georgia"; font-size: 27px; color: root.ink; }
+            if root.removing && !root.task-mode: Text { text: "“" + root.target-title + "”" + (root.kind == 0 ? " · " + root.task-count + (root.task-count == 1 ? " task" : " tasks") : ""); font-size: 14px; color: root.ink; wrap: word-wrap; }
+            if root.task-mode: Text { text: "To “" + root.target-title + "”"; font-size: 13px; color: root.secondary; wrap: word-wrap; }
+            if !root.removing: Text { text: root.task-mode ? "Task text" : "Title"; font-size: 13px; font-weight: 600; color: root.ink; }
+            title-field := TitleField { visible: !root.removing; label: root.task-mode ? (root.task-edit ? "Checklist task text" : "New checklist task") : root.capital + " title"; enabled: root.opened && !root.removing; single-line: true; dark: root.dark; height: root.removing ? 0px : 36px; text <=> root.title; edited(value) => { root.edited(0, value); } key-pressed(event) => { if event.modifiers.control || event.modifiers.meta || event.modifiers.alt { root.boundary(); } else { root.input(0, event.text); } return reject; } }
+            Rectangle {
+                visible: !root.task-mode && !root.removing; min-height: root.task-mode || root.removing ? 0px : max(120px, root.height - (root.error == "" ? 280px : 310px));
+                max-height: root.task-mode || root.removing ? 0px : max(120px, root.height - (root.error == "" ? 280px : 310px)); vertical-stretch: root.task-mode || root.removing ? 0 : 1;
+                VerticalLayout { spacing: 10px;
+            Text { text: root.capital + " text"; font-size: 13px; font-weight: 600; color: root.ink; }
+            Text { text: root.kind == 0 ? "Use [ ] for an open task and [x] for a completed task, one per line." : "Keep text here without adding it to your manuscript."; wrap: word-wrap; font-size: 12px; color: root.secondary; }
+            content-field := TitleField { label: root.capital + " text"; enabled: root.opened && !root.task-mode && !root.removing; dark: root.dark; min-height: 70px; vertical-stretch: 1; text <=> root.content; edited(value) => { root.edited(1, value); } key-pressed(event) => { if event.modifiers.control || event.modifiers.meta || event.modifiers.alt { root.boundary(); } else { root.input(1, event.text); } return reject; } }
+                }
+            }
+            if root.removing: Text { height: 42px; text: root.removal-preview; font-size: 14px; color: root.ink; wrap: word-wrap; overflow: elide; }
+            if root.removing: Text { text: root.task-mode ? "This removes the stored task, including its inline notes. Unsaved edits in this form are discarded. Undo Shelf Change can restore the task." : (root.kind == 0 ? "This deletes the entire checklist and all its tasks, including notes. Unsaved edits in this form are discarded. Undo Shelf Change can restore the checklist." : "This deletes the stored " + root.singular + " and its text. Unsaved edits in this form are discarded. Undo Shelf Change can restore it."); font-size: 12px; color: root.secondary; wrap: word-wrap; }
+            if root.task-edit && !root.removing: Text { text: "Inline notes remain part of the task text."; font-size: 12px; color: root.secondary; wrap: word-wrap; }
+            Text { text: root.removing ? "Your manuscript stays unchanged." : "Kept on the Shelf. Your manuscript stays unchanged."; font-size: 12px; color: root.secondary; wrap: word-wrap; }
+            if root.error != "": Text { text: root.error; color: root.ink; font-size: 12px; wrap: word-wrap; }
+            Rectangle { height: 1px; background: root.dark ? #484848 : #d5d5d1; }
+            HorizontalLayout { spacing: 10px;
+                remove := Button { visible: root.can-remove && !root.removing; min-width: root.can-remove && !root.removing ? (root.task-mode ? 120px : 150px) : 0px; max-width: root.can-remove && !root.removing ? (root.task-mode ? 120px : 150px) : 0px; text: root.task-mode ? "Remove Task…" : "Delete " + root.capital + "…"; enabled: root.opened && root.can-remove && !root.removing && !root.composing; clicked => { root.remove-requested(); } }
+                Rectangle { background: transparent; horizontal-stretch: 1; }
+                cancel := Button { text: "Cancel"; enabled: root.opened; clicked => { root.action(false); } }
+                save := Button { text: root.removing ? (root.task-mode ? "Remove Task" : "Delete " + root.capital) : root.task-mode ? (root.task-edit ? "Save Task" : "Add Task") : (root.existing ? "Save " + root.capital : "Create " + root.capital); enabled: root.opened && !root.composing; clicked => { root.action(true); } }
+            }
+        }
+    }
+}

@@ -1,0 +1,55 @@
+import { TitleField } from "title-page-dialog.slint";
+import { Button } from "std-widgets.slint";
+export component QuickNoteEntry inherits Rectangle {
+    in property <bool> shown;
+    in property <bool> enabled;
+    in property <bool> dark;
+    in property <bool> pending;
+    in-out property <string> text;
+    out property <bool> focused: root.shown && entry.has-focus;
+    out property <bool> composing: root.shown && entry.composing;
+    out property <int> selection-anchor: entry.selection-anchor;
+    out property <int> selection-focus: entry.selection-focus;
+    callback input(string);
+    callback selection(string, int, int);
+    callback boundary();
+    changed focused => { root.boundary(); }
+    changed composing => { root.boundary(); }
+    callback edited(string);
+    callback capture();
+    callback blocked();
+    public function focus-entry() { entry.focus(); }
+    public function select(anchor: int, focus: int) { entry.focus(); entry.set-selection-offsets(anchor, focus); }
+    public function focus-add() { add.focus(); }
+    public function clipboard(kind: int) {
+        if !root.focused { return; }
+        if root.composing && kind != 1 { root.blocked(); return; }
+        root.boundary();
+        root.selection(root.text, entry.selection-anchor, entry.selection-focus);
+        if kind == 0 { entry.cut(); } else if kind == 1 { entry.copy(); }
+        else if kind == 2 { entry.paste(); } else if kind == 3 { entry.select-all(); }
+    }
+    visible: root.shown;
+    height: root.shown ? 128px : 0px;
+    clip: true;
+    background: transparent;
+    VerticalLayout { spacing: 6px; padding-bottom: 8px;
+        Text { text: "Quick Note"; font-size: 15px; font-weight: 600; color: root.dark ? #eeeeee : #292929; }
+        entry := TitleField {
+            height: 44px; dark: root.dark; enabled: root.enabled;
+            label: "Quick Note draft"; text <=> root.text;
+            edited(value) => { root.edited(value); }
+            selection-changed(value, anchor, focus) => { root.selection(value, anchor, focus); }
+            key-pressed(event) => {
+                if event.modifiers.control || event.modifiers.meta || event.modifiers.alt { root.boundary(); }
+                else { root.input(event.text); }
+                return reject;
+            }
+        }
+        HorizontalLayout { spacing: 12px;
+            Text { text: root.pending ? "Not stored yet. Retry or copy your text." : "Draft stays with this project."; font-size: 11px; wrap: word-wrap; color: root.dark ? #aaaaaa : #6b6b68; horizontal-stretch: 1; }
+            add := Button { text: root.pending ? "Retry" : "Add Note"; accessible-label: root.pending ? "Retry storing Quick Note draft" : "Add Quick Note"; enabled: root.enabled && (root.pending || root.text != ""); clicked => { root.capture(); } }
+        }
+        Rectangle { height: 1px; background: root.dark ? #484848 : #d5d5d1; }
+    }
+}

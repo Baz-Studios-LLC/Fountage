@@ -1,0 +1,39 @@
+// Opt-in integration surface. Input-method and accessible-text acceptance is
+// deliberately outstanding; the normal TextInput remains the default editor.
+export component FormattedSurface inherits Rectangle {
+    in property <bool> enabled: true;
+    in property <image> frame;
+    out property <bool> has-focus: keys.has-focus;
+    callback resized(float, float);
+    callback point(float, float, bool);
+    callback scrolled(float);
+    callback input-key(KeyEvent) -> bool;
+    callback context-requested(length, length);
+    callback cancelled();
+    changed has-focus => { if !root.has-focus { root.cancelled(); } }
+    property <bool> selecting: false;
+    forward-focus: keys;
+    changed width => { root.resized(self.width / 1px, self.height / 1px); }
+    changed height => { root.resized(self.width / 1px, self.height / 1px); }
+    Image { width: parent.width; height: parent.height; source: root.frame; image-fit: fill; }
+    keys := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => { if root.input-key(event) { return accept; } return reject; }
+        pointer := TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: text;
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                    root.selecting = true;
+                    keys.focus(); root.point(self.mouse-x / 1px, self.mouse-y / 1px, event.modifiers.shift);
+                }
+                if event.kind == PointerEventKind.up { root.selecting = false; }
+                if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                    root.selecting = false; keys.focus(); root.context-requested(self.mouse-x, self.mouse-y);
+                }
+            }
+            moved => { if self.pressed && root.selecting { root.point(self.mouse-x / 1px, self.mouse-y / 1px, true); } }
+            scroll-event(event) => { root.scrolled(event.delta-y / 1px); return accept; }
+        }
+    }
+}

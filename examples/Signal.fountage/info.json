@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "type": "public.plain-text",
+  "creatorIdentifier": "com.bazstudios.fountage",
+  "com.bazstudios.fountage": {
+    "version": 2,
+    "projectID": "cb838f79-107e-4c88-8121-d84dee5dd3d6",
+    "createdAt": "2026-10-14T04:26:37.198132+00:00",
+    "documentFormat": "comic",
+    "layoutPreset": "comic-full-script",
+    "sourceFile": "text.txt"
+  }
+}

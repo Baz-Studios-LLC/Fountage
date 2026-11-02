@@ -47,6 +47,8 @@ jobs:
             prototypes/slint
       - name: Core tests
         run: cargo test --locked --lib
+      - name: Packaging regressions
+        run: python scripts/test_package_release.py
       - name: Mac generated-editor tests
         if: matrix.platform == 'macos'
         run: cargo test --locked --manifest-path prototypes/slint/Cargo.toml

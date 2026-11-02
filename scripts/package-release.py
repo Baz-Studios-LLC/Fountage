@@ -19,6 +19,15 @@ def run(*args):
     return subprocess.check_output(args, cwd=ROOT, encoding="utf-8")
 
 
+def archive_directory(package, destination):
+    # Some crates ship license files with epoch timestamps. ZIP starts at 1980;
+    # clamp only archive dates, preserving every file's bytes and Unicode name.
+    with zipfile.ZipFile(destination, "x", zipfile.ZIP_DEFLATED, strict_timestamps=False) as archive:
+        for path in sorted(package.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(package.parent))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--platform", choices=["macos", "windows"], required=True)
@@ -98,10 +107,7 @@ def main():
             subprocess.run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(package), str(destination)], check=True)
         else:
             shutil.copy2(binary, package / "Fountage.exe")
-            with zipfile.ZipFile(destination, "x", zipfile.ZIP_DEFLATED) as archive:
-                for path in sorted(package.rglob("*")):
-                    if path.is_file():
-                        archive.write(path, path.relative_to(package.parent))
+            archive_directory(package, destination)
         checksum = hashlib.sha256(destination.read_bytes()).hexdigest()
         (dist / f"{name}.sha256").write_text(f"{checksum}  {destination.name}\n")
         print(destination)

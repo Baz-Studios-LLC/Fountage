@@ -1116,6 +1116,10 @@ mod tests {
                     Entry::File(vec![0, 255, 1]),
                 )])),
             );
+            // Windows currently rejects link-bearing packages atomically. Its
+            // rejection is covered in project_copy; ordinary package lifecycle
+            // coverage must still run for every writing category there.
+            #[cfg(unix)]
             entries.insert(
                 "external-link".into(),
                 Entry::SymbolicLink("../unfollowed".into()),

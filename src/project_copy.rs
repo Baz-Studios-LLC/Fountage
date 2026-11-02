@@ -83,6 +83,25 @@ pub(crate) fn save(entries: &BTreeMap<OsString, Entry>, destination: &Path) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(unix))]
+    #[test]
+    fn unsupported_link_rejects_the_whole_package_without_publishing_or_mutating() {
+        let root = tempfile::tempdir().unwrap();
+        let tree = BTreeMap::from([
+            ("source.txt".into(), Entry::File(b"keep source".to_vec())),
+            ("link".into(), Entry::SymbolicLink("../unfollowed".into())),
+        ]);
+        let before = tree.clone();
+        let destination = root.path().join("Links.fountage");
+        assert!(
+            save(&tree, &destination)
+                .unwrap_err()
+                .contains("attachment links")
+        );
+        assert_eq!(tree, before);
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    }
     #[test]
     fn occupied_empty_directory_file_and_dangling_link_are_never_replaced() {
         let root = tempfile::tempdir().unwrap();
